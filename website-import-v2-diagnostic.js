@@ -4828,19 +4828,94 @@ function buildResponseAudit(html, root, response) {
   );
   const scripts = $("script");
   const scriptTypes = {};
-  scripts.each((_, node) => {
+  const structuredData = [];
+  const dataScripts = [];
+  const htmlSource = String(html || "");
+  const maxBlockChars = 16000;
+
+  const compact = value => {
+    try {
+      return JSON.stringify(value).slice(0, maxBlockChars);
+    } catch {
+      return String(value || "").slice(0, maxBlockChars);
+    }
+  };
+
+  scripts.each((index, node) => {
     const type = String($(node).attr("type") || "classic").trim().toLowerCase();
+    const raw = String($(node).html() || "").trim();
     scriptTypes[type] = (scriptTypes[type] || 0) + 1;
+
+    if (type === "application/ld+json") {
+      const parsed = parseJsonSafe(raw);
+      structuredData.push({
+        index,
+        parsed: parsed !== null,
+        chars: raw.length,
+        content: parsed !== null ? compact(parsed) : raw.slice(0, maxBlockChars)
+      });
+      return;
+    }
+
+    if (type === "application/json") {
+      const parsed = parseJsonSafe(raw);
+      dataScripts.push({
+        index,
+        type,
+        id: $(node).attr("id") || null,
+        parsed: parsed !== null,
+        chars: raw.length,
+        content: parsed !== null ? compact(parsed) : raw.slice(0, maxBlockChars)
+      });
+      return;
+    }
+
+    if (raw && /protein.?latte|gymbeam|product|offers?|price|variant|sku|ecommerce/i.test(raw)) {
+      const matches = [...raw.matchAll(/protein.?latte|45[,.]95|price|offers?|variant|sku|product/i)].slice(0, 12);
+      dataScripts.push({
+        index,
+        type,
+        id: $(node).attr("id") || null,
+        chars: raw.length,
+        relevantMatches: matches.map(match => ({
+          term: match[0],
+          snippet: raw.slice(Math.max(0, match.index - 350), Math.min(raw.length, match.index + 900))
+        }))
+      });
+    }
   });
+
+  const htmlSnippets = [];
+  const htmlPatterns = [
+    /protein.?latte/ig,
+    /45[,.]95/ig,
+    /priceCurrency/ig,
+    /"price"\s*:/ig,
+    /"offers"\s*:/ig,
+    /"@type"\s*:\s*"Product/ig
+  ];
+  for (const pattern of htmlPatterns) {
+    let match;
+    let count = 0;
+    while ((match = pattern.exec(htmlSource)) && count < 5) {
+      htmlSnippets.push({
+        term: match[0],
+        index: match.index,
+        snippet: htmlSource.slice(Math.max(0, match.index - 450), Math.min(htmlSource.length, match.index + 1200))
+      });
+      count++;
+    }
+  }
+
   const bodyLower = bodyText.toLowerCase();
-  const htmlLower = String(html || "").slice(0, 2_000_000).toLowerCase();
+  const htmlLower = htmlSource.slice(0, 2_000_000).toLowerCase();
   const signals = {
     captcha: /captcha|hcaptcha|g-recaptcha|cf-turnstile/.test(htmlLower),
     cloudflareChallenge: /cf-challenge|challenge-platform|just a moment|attention required/.test(htmlLower),
     botProtection: /access denied|automated requests|unusual traffic|bot detection|request blocked/.test(bodyLower),
     javascriptRequired: /enable javascript|javascript is required|please enable javascript/.test(bodyLower),
-    astro: $("astro-island").length > 0 || /astro-island|astro\//i.test(html),
-    productSchema: /"@type"\s*:\s*"(?:Product|ProductGroup)"/i.test(html) ||
+    astro: $("astro-island").length > 0 || /astro-island|astro\//i.test(htmlSource),
+    productSchema: /"@type"\s*:\s*"(?:Product|ProductGroup)"/i.test(htmlSource) ||
       $("[itemtype*='schema.org/Product']").length > 0,
     priceMarkers: /itemprop=["']price|priceCurrency|\bprice\b|cena|€|eur/i.test(htmlLower),
     gymbeamBrand: /gymbeam/i.test((title + " " + ogTitle + " " + bodyText).toLowerCase())
@@ -4857,7 +4932,7 @@ function buildResponseAudit(html, root, response) {
     contentEncoding: safeHeader("content-encoding"),
     server: safeHeader("server"),
     poweredBy: safeHeader("x-powered-by"),
-    bytes: Buffer.isBuffer(response?.body) ? response.body.length : Buffer.byteLength(String(html || "")),
+    bytes: Buffer.isBuffer(response?.body) ? response.body.length : Buffer.byteLength(htmlSource),
     htmlTitle: title,
     ogTitle,
     canonical,
@@ -4874,6 +4949,9 @@ function buildResponseAudit(html, root, response) {
       linkCount: $("a[href]").length
     },
     signals,
+    structuredData,
+    dataScripts: dataScripts.slice(0, 20),
+    htmlSnippets: htmlSnippets.slice(0, 24),
     bodyTextSample: bodyText.slice(0, 1200)
   };
 }
