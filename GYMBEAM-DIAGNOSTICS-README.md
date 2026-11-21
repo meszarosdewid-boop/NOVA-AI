@@ -32,10 +32,13 @@ The script writes `gymbeam-diagnostic-report.json` in the same folder and prints
 - HTML title, Open Graph title, canonical URL and description
 - counts of main elements, Astro islands, scripts, JSON-LD, forms and links
 - bounded indicators for CAPTCHA, Cloudflare challenge, bot protection and JavaScript-required pages
+- parsed JSON-LD blocks (bounded to 16,000 characters per block)
+- `application/json` script contents and relevant product-related script snippets (bounded)
+- HTML snippets around product-name, price, `priceCurrency`, `offers` and Product-schema markers
 - a limited visible-text sample (up to 1,200 characters)
 - product extraction results and crawl errors
 
-The diagnostic does not save the full HTML response, cookies, authorization headers or other secret headers.
+The diagnostic does not save the full HTML response, cookies, authorization headers or other secret headers. Structured-data and HTML excerpts are deliberately length-limited; review the report before sharing it publicly.
 
 ## Safety
 
