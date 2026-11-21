@@ -4871,7 +4871,7 @@ function buildResponseAudit(html, root, response) {
     }
 
     if (raw && /protein.?latte|gymbeam|product|offers?|price|variant|sku|ecommerce/i.test(raw)) {
-      const matches = [...raw.matchAll(/protein.?latte|45[,.]95|price|offers?|variant|sku|product/i)].slice(0, 12);
+      const matches = [...raw.matchAll(/protein.?latte|45[,.]95|price|offers?|variant|sku|product/ig)].slice(0, 12);
       dataScripts.push({
         index,
         type,
