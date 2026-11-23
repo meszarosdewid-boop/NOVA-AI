@@ -1415,11 +1415,10 @@ export function extractProductsFromJsonLd(html, pageUrl, existingRoot = null) {
             product.name = `${groupName} — ${variantLabel}`;
           }
           product.isVariant = true;
-          products.push({
-          ...product,
-          detailPageVisited: currentIsProductPage ? true : product.detailPageVisited === true,
-          listingPageUrl: currentIsProductPage ? (product.listingPageUrl || null) : (product.listingPageUrl || response.url)
-        });
+          // This function only parses JSON-LD and has no crawler response context.
+          // Crawl metadata is attached later by crawlWebsite(); referencing
+          // currentIsProductPage/response here caused a ReferenceError for ProductGroup pages.
+          products.push(product);
         }
         continue;
       }
@@ -1433,9 +1432,55 @@ export function extractProductsFromJsonLd(html, pageUrl, existingRoot = null) {
       }
 
       const product = extractProductFromJsonLd(node, pageUrl);
-      if (product) products.push(product);
+      if (product) {
+        // Keep schema variant attributes until sibling Product nodes have been
+        // compared. Some shops publish one Product node per option instead of
+        // a single ProductGroup/hasVariant or Product/offers array.
+        product.variantAttributes = getVariantAttributes(node);
+        products.push(product);
+      }
     }
   });
+
+  // A number of storefronts publish sibling schema.org Product nodes for
+  // each selectable option. They can share the same canonical URL and title,
+  // which would otherwise make the ordinary URL+name deduplicator collapse
+  // them. Promote only groups with distinct stable identifiers to variants.
+  const siblingGroups = new Map();
+  for (const product of products) {
+    if (!product || product.isVariant === true) continue;
+    const identityUrl = normalizeProductUrl(product.url || pageUrl);
+    const identityName = normalizeProductName(product.name || "");
+    const stableId = [product.sku, product.gtin, product.mpn, product.productId]
+      .map(value => normalizeProductName(value || ""))
+      .filter(Boolean)
+      .join("|");
+    if (!identityUrl || !identityName || !stableId) continue;
+    const key = `${identityUrl}|${identityName}`;
+    if (!siblingGroups.has(key)) siblingGroups.set(key, []);
+    siblingGroups.get(key).push({ product, stableId });
+  }
+
+  for (const [groupId, entries] of siblingGroups) {
+    const uniqueIds = new Set(entries.map(entry => entry.stableId));
+    if (entries.length < 2 || uniqueIds.size < 2) continue;
+    const groupName = entries[0].product.name;
+    for (const { product } of entries) {
+      const attributes = product.variantAttributes && typeof product.variantAttributes === "object"
+        ? { ...product.variantAttributes }
+        : {};
+      const descriptiveAttributes = Object.entries(attributes)
+        .filter(([key, value]) => !/^(?:sku|gtin|gtin8|gtin12|gtin13|gtin14)$/i.test(key) && String(value || "").trim());
+      const stableLabel = descriptiveAttributes.map(([key, value]) => `${key}: ${value}`).join(" / ") ||
+        (product.sku ? `SKU ${product.sku}` : product.gtin ? `EAN ${product.gtin}` : product.mpn || product.productId || "variant");
+      product.isVariant = true;
+      product.variantGroupId = groupId;
+      product.variantGroupName = groupName;
+      product.variantName = stableLabel;
+      product.variantAttributes = attributes;
+      product.name = `${groupName} — ${stableLabel}`;
+    }
+  }
 
   return deduplicateProducts(products).slice(
     0,
