@@ -1317,10 +1317,18 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     const sizeText = cleanText(rawSize || nameSize, 100);
     const packageMeasure = sizeText ? parseExplicitPackageLabel(sizeText) : null;
     const color = cleanText(offer.color?.name || offer.color || itemOffered.color?.name || itemOffered.color || "", 120);
-    const sku = cleanText(offer.sku || offer.productID || itemOffered.sku || "", 160);
-    const variantLabel = [sizeText, color].filter(Boolean).join(" / ");
+    // A variant offer may identify its option only in its own name (e.g.
+    // "Protein Latte - GymBeam čokoláda"). Preserve that option explicitly;
+    // do not require a size/color field to recognize a real variant.
+    const nameVariant = offerName && normalizeProductName(offerName) !== normalizeProductName(baseName)
+      ? cleanText(offerName.slice(baseName.length).replace(/^\s*[-–—,:|/]\s*/, ""), 120)
+      : "";
+    const sku = cleanText(offer.sku || offer.SKU || offer.productID || itemOffered.sku || itemOffered.SKU || itemOffered.productID || "", 160);
+    const gtin = cleanText(offer.gtin || offer.gtin8 || offer.gtin12 || offer.gtin13 || offer.gtin14 || offer.ean || offer.ean13 ||
+      itemOffered.gtin || itemOffered.gtin8 || itemOffered.gtin12 || itemOffered.gtin13 || itemOffered.gtin14 || itemOffered.ean || itemOffered.ean13 || "", 160);
+    const variantLabel = [sizeText, color, nameVariant].filter(Boolean).join(" / ");
     const name = offerName || (variantLabel ? `${baseName} — ${variantLabel}` : baseName);
-    const signature = [sku, sizeText, color, price, currency].join("|").toLowerCase();
+    const signature = [sku, gtin, sizeText, color, nameVariant, price, currency].join("|").toLowerCase();
     if (seen.has(signature)) continue;
     seen.add(signature);
 
@@ -1358,7 +1366,9 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
       variantAttributes: {
         ...(sizeText ? { size: sizeText } : {}),
         ...(color ? { color } : {}),
-        ...(sku ? { sku } : {})
+        ...(nameVariant ? { option: nameVariant } : {}),
+        ...(sku ? { sku } : {}),
+        ...(gtin ? { gtin } : {})
       },
       source: "json-ld-offer-variant"
     });
@@ -1367,7 +1377,8 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
   // Do not expand a collection of ordinary offers unless at least two offers
   // carry explicit variant identity. This prevents price tiers from becoming variants.
   const identifiable = records.filter(item => item.packageQuantity != null ||
-    Object.keys(item.variantAttributes || {}).length > 1 || item.variantAttributes?.sku);
+    Object.keys(item.variantAttributes || {}).length > 1 ||
+    item.variantAttributes?.sku || item.variantAttributes?.gtin || item.variantAttributes?.option);
   return identifiable.length >= 2 ? records : [];
 }
 
