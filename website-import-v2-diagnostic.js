@@ -5537,6 +5537,25 @@ export async function crawlWebsite(inputUrl, options = {}) {
     stopReason,
     totalBytes,
     productsFound: uniqueProducts.length,
+    // Diagnostic-only sample of the final normalized records. This makes it
+    // possible to verify that identifiers and offer data survive the complete
+    // extraction, deduplication and variant-selection pipeline.
+    finalProductRecords: uniqueProducts.slice(0, 100).map(product => ({
+      name: product.name || null,
+      variantName: product.variantName || null,
+      variantGroupName: product.variantGroupName || null,
+      isVariant: product.isVariant === true,
+      price: product.price ?? null,
+      packagePrice: product.packagePrice ?? null,
+      currency: product.currency || null,
+      availability: product.availability || null,
+      sku: product.sku || null,
+      gtin: product.gtin || null,
+      ean: product.ean || null,
+      productId: product.productId || null,
+      url: product.url || null,
+      source: product.source || null
+    })),
     paginationUrlsDiscovered,
     paginationUrlsQueued,
     paginationLimitReached,
