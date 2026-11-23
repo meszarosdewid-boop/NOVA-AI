@@ -4690,12 +4690,12 @@ function getProductPageSignals(html, pageUrl, products, existingRoot = null) {
 function selectMainProduct(products, signals) {
   if (!products.length) return [];
 
-  const headingTokens = new Set((signals.heading || "").split(/\s+/).filter(token => token.length > 1));
-  const pathTokens = new Set((signals.path || "").split(/\s+/).filter(token => token.length > 1));
+  const headingTokens = new Set((signals.heading || "").split(/\\s+/).filter(token => token.length > 1));
+  const pathTokens = new Set((signals.path || "").split(/\\s+/).filter(token => token.length > 1));
 
   const scoreProduct = product => {
     const name = normalizeProductName(product.name);
-    const tokens = [...new Set(name.split(/\s+/).filter(token => token.length > 1))];
+    const tokens = [...new Set(name.split(/\\s+/).filter(token => token.length > 1))];
     if (!tokens.length) return 0;
 
     const overlap = source => {
@@ -4713,12 +4713,23 @@ function selectMainProduct(products, signals) {
     .map((product, index) => ({ product, index, score: scoreProduct(product) }))
     .sort((a, b) => b.score - a.score || a.index - b.index);
 
-  // A direct-product request must never fall back to the first arbitrary card
-  // on the page. If no extracted record matches the H1/URL, return no product
-  // rather than importing a bestseller or recommendation by mistake.
-  return ranked[0].score >= 0.20 ? [ranked[0].product] : [];
-}
+  // Keep every verified offer in the winning JSON-LD variant group. Selecting
+  // only the best-scoring flavour silently discarded its sibling variants.
+  const best = ranked[0];
+  if (best.score < 0.20) return [];
+  if (best.product.isVariant === true && best.product.variantGroupId &&
+      best.product.source === "json-ld-offer-variant") {
+    const group = products.filter(product =>
+      product.isVariant === true &&
+      product.source === "json-ld-offer-variant" &&
+      product.variantGroupId === best.product.variantGroupId
+    );
+    if (group.length >= 2) return group;
+  }
 
+  // Keep ordinary detail-page selection strict; never fall back to unrelated cards.
+  return [best.product];
+}
 function sortQueue(queue) {
   return queue.sort(
     (a, b) => scoreProductPage(b) - scoreProductPage(a)
@@ -5191,8 +5202,10 @@ export async function crawlWebsite(inputUrl, options = {}) {
 
       if (isDirectProductPage) {
         page.products = selectMainProduct(page.products, pageSignals);
-        if (page.products[0]) {
-          // Zdrojom ma byt skutocna URL detailu, nie chybny odkaz z metadata.
+        if (page.products[0] && !(page.products[0].isVariant === true &&
+            page.products[0].source === "json-ld-offer-variant")) {
+          // Ordinary records use the canonical detail URL. Verified offer variants
+          // keep their source URLs, including option fragments such as #SKU.
           page.products[0].url = response.url;
         }
         isDirectProductUrl = true;
