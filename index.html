@@ -1,0 +1,1260 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOVA AI – Administrácia</title>
+<style>
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:Arial,sans-serif;background:#f3f6fa;color:#182230}
+.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:22px}
+.login-card{width:100%;max-width:420px;background:#fff;padding:30px;border-radius:16px;box-shadow:0 8px 35px #18223012}
+.login-logo{font-size:30px;font-weight:bold;margin-bottom:8px;color:#101b30}
+.login-logo span{color:#55c6a5}
+.login-card h1{font-size:22px;margin:25px 0 8px}
+.login-card p{color:#738096;font-size:14px;line-height:1.5}
+.login-error{color:#b42318;background:#fef3f2;border:1px solid #fecdca;padding:10px;border-radius:8px;margin-top:12px;font-size:13px;display:none}
+.layout{display:flex;min-height:100vh}
+aside{width:245px;background:#101b30;color:white;padding:25px 18px;flex-shrink:0}
+.logo{font-size:25px;font-weight:bold;margin-bottom:38px}
+.logo span{color:#55c6a5}
+nav a{display:block;color:#cbd5e1;text-decoration:none;padding:13px 14px;border-radius:9px;margin:5px 0;font-size:14px}
+nav a.active,nav a:hover{background:#263750;color:white}
+main{flex:1;padding:32px;min-width:0;max-width:1500px}
+header{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;margin-bottom:25px}
+h1{margin:0 0 8px;font-size:28px}
+h2{font-size:19px;margin:0 0 12px}
+h3{margin:10px 0;font-size:27px}
+p{line-height:1.5}
+.muted{color:#738096;font-size:14px}
+.status{background:#dcfce7;color:#166534;padding:9px 14px;border-radius:20px;font-size:13px}
+.account-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.account-name{font-size:13px;color:#64748b}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin:25px 0}
+.card,.panel{background:white;padding:22px;border-radius:14px;box-shadow:0 3px 15px #1822300b}
+.card strong{display:block;font-size:22px;margin-top:12px}
+.panel{margin-top:20px;scroll-margin-top:20px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:20px 0}
+.stat-card{background:#f7f9fc;border:1px solid #e6ebf2;padding:17px;border-radius:11px}
+.stat-card strong{font-size:13px;color:#667085}
+.stat-card h3{font-size:26px;margin:10px 0 0}
+label{display:block;font-size:14px;margin:17px 0 7px;font-weight:600}
+input,textarea,select{width:100%;padding:12px;border:1px solid #d9e0ea;border-radius:8px;font:inherit;background:white;color:#182230}
+textarea{min-height:120px;resize:vertical}
+button{background:#176b58;color:white;border:0;padding:12px 18px;border-radius:8px;cursor:pointer;margin-top:14px;font-weight:600}
+button:hover{background:#10513f}
+button.secondary{background:#e9eef5;color:#263750}
+button.secondary:hover{background:#dce4ef}
+button.danger{background:#fee2e2;color:#991b1b}
+button.danger:hover{background:#fecaca}
+button:disabled{opacity:.6;cursor:not-allowed}
+.lead{border:1px solid #e2e8f0;padding:17px;margin:12px 0;border-radius:11px;background:#fff}
+.lead-top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lead pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:Arial,sans-serif;background:#f7f9fc;padding:12px;border-radius:8px;font-size:13px}
+.product-item{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f5;padding:12px 0}
+.product-item:last-child{border-bottom:0}
+.product-item button{margin:0}
+.empty{padding:25px;text-align:center;color:#738096;background:#f7f9fc;border-radius:10px}
+.section-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.filter-row{max-width:350px}
+.notice{padding:12px 14px;background:#f7f9fc;border:1px solid #e6ebf2;border-radius:9px;font-size:13px;color:#596579;line-height:1.5;margin-top:14px}
+footer{padding:25px 0;color:#8792a5;font-size:12px}
+
+.crm-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin:20px 0}
+.crm-metric{background:#f7f9fc;border:1px solid #e6ebf2;padding:16px;border-radius:11px;min-width:0}
+.crm-metric strong{display:block;font-size:12px;color:#667085}
+.crm-metric b{display:block;font-size:25px;margin-top:9px;overflow-wrap:anywhere}
+.pipeline-board{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:12px;align-items:start;margin-top:16px}
+.pipeline-column{background:#f7f9fc;border:1px solid #e6ebf2;border-radius:12px;padding:12px;min-width:0}
+.pipeline-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-bottom:10px}
+.pipeline-count{background:#e7edf5;border-radius:20px;padding:3px 8px;font-size:12px}
+.pipeline-card{width:100%;text-align:left;background:white;color:#182230;border:1px solid #e2e8f0;padding:12px;border-radius:9px;margin:7px 0 0;display:block}
+.pipeline-card:hover{background:#f0f7f5;border-color:#acd8ca}
+.pipeline-card strong{display:block;font-size:13px;overflow-wrap:anywhere}
+.pipeline-card small{display:block;color:#738096;margin-top:6px;font-size:12px;line-height:1.4}
+.pipeline-card .value{color:#176b58;font-weight:700}
+.pipeline-empty{color:#98a2b3;font-size:12px;padding:10px 4px}
+.crm-tools{display:grid;grid-template-columns:minmax(220px,1fr) minmax(180px,260px);gap:12px;align-items:end;margin-top:16px}
+.crm-tools label{margin-top:0}
+.lead-details{margin-top:20px;border:1px solid #dce5ee;border-radius:13px;padding:20px;background:#fff;scroll-margin-top:20px}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px}
+.detail-grid .full{grid-column:1/-1}
+.detail-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.conversation-box{white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto;background:#f7f9fc;border:1px solid #e7edf3;padding:14px;border-radius:9px;font-size:13px;line-height:1.55}
+.timeline{display:grid;gap:9px;margin-top:12px}
+.timeline-item{border-left:3px solid #c9d8e5;padding:8px 12px;background:#f8fafc;border-radius:0 8px 8px 0}
+.timeline-item.note{border-left-color:#176b58}
+.timeline-title{font-size:13px;font-weight:700}
+.timeline-meta{font-size:11px;color:#8490a1;margin-top:4px}
+.timeline-text{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px}
+.detail-section{margin-top:18px;padding-top:16px;border-top:1px solid #edf0f5}
+.quote-builder{margin-top:16px;padding:18px;background:#f7f9fc;border:1px solid #e6ebf2;border-radius:12px}
+.quote-lines{display:grid;gap:8px;margin:12px 0}
+.quote-line{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;background:#fff;border:1px solid #e6ebf2;border-radius:9px;padding:10px 12px;font-size:13px}
+.quote-card{border:1px solid #e2e8f0;border-radius:11px;padding:15px;margin:10px 0;background:#fff}
+.quote-card-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.quote-status{display:inline-block;border-radius:20px;padding:5px 9px;background:#e9eef5;color:#334155;font-size:11px;font-weight:700}
+.quote-actions{display:flex;gap:8px;flex-wrap:wrap}
+.quote-actions button{margin-top:8px}
+.quote-total{font-size:20px;font-weight:700;color:#176b58}
+@media(max-width:700px){.quote-line{grid-template-columns:1fr auto}.quote-line .quote-line-meta{grid-column:1/-1}}
+@media(max-width:1000px){.pipeline-board{grid-template-columns:repeat(2,minmax(220px,1fr))}}
+@media(max-width:700px){.pipeline-board{grid-template-columns:1fr}.crm-tools,.detail-grid{grid-template-columns:1fr}.detail-grid .full{grid-column:auto}.lead-details{padding:15px}}
+@media(max-width:700px){
+.layout{display:block}
+aside{width:100%;padding:15px}
+.logo{margin-bottom:15px}
+nav{display:flex;overflow:auto;gap:4px}
+nav a{white-space:nowrap;padding:11px}
+main{padding:18px}
+h1{font-size:24px}
+.card,.panel{padding:17px}
+}
+</style>
+</head>
+<body>
+
+<section id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">NOVA <span>AI</span></div>
+    <h1>Prihlásenie do administrácie</h1>
+    <p>Prihláste sa účtom, ktorý vám bol vytvorený pre vašu firmu.</p>
+    <form id="loginForm">
+      <label for="loginUsername">Používateľské meno</label>
+      <input id="loginUsername" name="username" autocomplete="username" required maxlength="80">
+      <label for="loginPassword">Heslo</label>
+      <input id="loginPassword" name="password" type="password" autocomplete="current-password" required maxlength="200">
+      <button id="loginButton" type="submit" style="width:100%">Prihlásiť sa</button>
+      <div id="loginError" class="login-error" role="alert"></div>
+    </form>
+  </div>
+</section>
+
+<div id="adminApp" class="layout" style="display:none">
+<aside>
+  <div class="logo">NOVA <span>AI</span></div>
+  <nav>
+    <a class="active" href="#prehlad">Prehľad</a>
+    <a href="#firma">Firemné údaje</a>
+    <a href="#produkty">Produkty a ceny</a>
+    <a href="#znalosti">Znalosti AI</a>
+    <a href="#zakaznici">Zákazníci</a>
+    <a href="#nastavenia">Nastavenia</a>
+  </nav>
+</aside>
+
+<main>
+<header>
+  <div>
+    <h1>Administrácia</h1>
+    <div class="muted">Správa vášho digitálneho zamestnanca</div>
+    <div class="account-name" id="tenantLabel"></div>
+  </div>
+  <div class="account-row">
+    <div class="status">● Systém spustený</div>
+    <button class="secondary" onclick="logout()">Odhlásiť sa</button>
+  </div>
+</header>
+
+<section id="prehlad" class="cards">
+  <div class="card">Firma<strong id="dashboardCompany">Načítavam...</strong><span class="muted">Aktívny profil</span></div>
+  <div class="card">AI asistent<strong>ONLINE</strong><span class="muted">Pripravený komunikovať</span></div>
+  <div class="card">Zákaznícke dopyty<strong id="dashboardLeads">0</strong><span class="muted">Dopyty tejto firmy</span></div>
+</section>
+
+<section id="firma" class="panel">
+  <h2>Firemné údaje</h2>
+  <p class="muted">Kontaktné informácie vašej spoločnosti.</p>
+  <label for="company">Názov firmy</label>
+  <input id="company" maxlength="160">
+  <label for="email">Kontaktný e-mail</label>
+  <input id="email" type="email" placeholder="vas@email.sk">
+  <label for="phone">Telefón</label>
+  <input id="phone" placeholder="+421">
+  <button onclick="saveCompany()">Uložiť údaje</button>
+</section>
+
+<section id="produkty" class="panel">
+  <h2>Produkty a ceny</h2>
+  <p class="muted">Správa sortimentu a predajných cien.</p>
+  <label for="product">Názov produktu</label>
+  <input id="product" placeholder="Napr. Použitá EPAL A">
+  <label for="price">Cena (€ za kus)</label>
+  <input id="price" type="number" min="0" step="0.01" placeholder="12.20">
+  <button onclick="addProduct()">Pridať produkt</button>
+  <div id="productList"></div>
+  <div class="notice" style="margin-top:20px;">
+    <strong>Načítať produkty a ceny z webu</strong>
+    <p class="muted">NOVA AI vyhľadá produkty s jednoznačnou cenou. Najprv zobrazí náhľad a porovnanie s katalógom. Nič sa neuloží bez tvojho schválenia.</p>
+    <label for="productImportUrl">Webová adresa katalógu alebo e-shopu</label>
+    <input id="productImportUrl" type="url" maxlength="2048" placeholder="https://www.vasafirma.sk/produkty">
+    <button type="button" id="productPreviewButton" onclick="previewWebsiteProducts()">Vyhľadať produkty a ceny</button>
+    <p id="productImportStatus" class="muted" role="status" aria-live="polite"></p>
+    <div id="productImportPreview"></div>
+  </div>
+</section>
+
+<section id="znalosti" class="panel">
+  <h2>Znalosti AI</h2>
+  <p class="muted">Tieto informácie slúžia ako firemný podklad pre asistenta.</p>
+  <label for="knowledge">Informácie o firme pre AI asistenta</label>
+  <textarea id="knowledge"></textarea>
+
+  <div class="notice" style="margin-top:16px;">
+    <strong>Automatický import webovej stránky</strong><br>
+    Zadajte adresu webovej stránky firmy. NOVA AI načíta dostupný obsah a bezpečne ho pridá k existujúcim znalostiam. Existujúce znalosti zostanú zachované.
+  </div>
+  <label for="websiteUrl">Webová adresa firmy</label>
+  <input id="websiteUrl" type="url" maxlength="2048" placeholder="https://www.vasafirma.sk" autocomplete="url">
+  <button type="button" id="websiteImportButton" onclick="importWebsite()">Importovať web do znalostí AI</button>
+  <p id="websiteImportStatus" class="muted" role="status" aria-live="polite"></p>
+
+  <button onclick="saveKnowledge()">Uložiť znalosti</button>
+</section>
+
+<section id="zakaznici" class="panel">
+  <div class="section-heading">
+    <div>
+      <h2>CRM – obchodné príležitosti</h2>
+      <p class="muted">Obchodný lievik, zákaznícke dopyty a história komunikácie vašej firmy.</p>
+    </div>
+    <button onclick="loadLeads()">Obnoviť CRM</button>
+  </div>
+
+  <div class="crm-metrics">
+    <div class="crm-metric"><strong>Všetky dopyty</strong><b id="totalLeads">0</b></div>
+    <div class="crm-metric"><strong>Nové dopyty</strong><b id="newLeads">0</b></div>
+    <div class="crm-metric"><strong>Rozpracované</strong><b id="activeLeads">0</b></div>
+    <div class="crm-metric"><strong>Ponuky odoslané</strong><b id="sentOffers">0</b></div>
+    <div class="crm-metric"><strong>Potvrdené objednávky</strong><b id="confirmedOrders">0</b></div>
+    <div class="crm-metric"><strong>Uzavreté dopyty</strong><b id="closedLeads">0</b></div>
+    <div class="crm-metric"><strong>Úspešnosť</strong><b id="successRate">0 %</b></div>
+    <div class="crm-metric"><strong>Hodnota otvorených príležitostí</strong><b id="pipelineValue">0,00 €</b></div>
+  </div>
+
+  <div class="section-heading">
+    <div>
+      <h2>Obchodný lievik</h2>
+      <p class="muted">Vyberte dopyt a spravujte jeho stav, údaje a poznámky.</p>
+    </div>
+  </div>
+  <div id="pipelineBoard" class="pipeline-board">
+    <div class="empty">Načítavam obchodný lievik...</div>
+  </div>
+
+  <div class="crm-tools">
+    <div>
+      <label for="leadSearch">Vyhľadávanie zákazníkov</label>
+      <input id="leadSearch" type="search" placeholder="Meno, firma, e-mail, telefón alebo požiadavka..." autocomplete="off">
+    </div>
+    <div>
+      <label for="leadStatusFilter">Filtrovať podľa stavu</label>
+      <select id="leadStatusFilter">
+        <option value="Všetky">Všetky dopyty</option>
+        <option value="Nový dopyt">Nový dopyt</option>
+        <option value="Kontaktovaný">Kontaktovaný</option>
+        <option value="Ponuka odoslaná">Ponuka odoslaná</option>
+        <option value="Čaká na odpoveď">Čaká na odpoveď</option>
+        <option value="Objednávka potvrdená">Objednávka potvrdená</option>
+        <option value="Uzavretý">Uzavretý</option>
+      </select>
+    </div>
+  </div>
+
+  <section id="leadDetails" class="lead-details" hidden>
+    <div class="section-heading">
+      <div>
+        <h2 id="detailHeading">Detail zákazníka</h2>
+        <p class="muted" id="detailSubheading"></p>
+      </div>
+      <button class="secondary" onclick="closeLeadDetails()">Zavrieť detail</button>
+    </div>
+
+    <div class="detail-grid">
+      <div>
+        <label for="leadCustomerName">Meno kontaktnej osoby</label>
+        <input id="leadCustomerName" maxlength="160" placeholder="Meno a priezvisko">
+      </div>
+      <div>
+        <label for="leadCompanyName">Firma zákazníka</label>
+        <input id="leadCompanyName" maxlength="160" placeholder="Názov zákazníckej firmy">
+      </div>
+      <div>
+        <label for="leadEmail">E-mail</label>
+        <input id="leadEmail" type="email" maxlength="250" placeholder="zakaznik@firma.sk">
+      </div>
+      <div>
+        <label for="leadPhone">Telefón</label>
+        <input id="leadPhone" maxlength="80" placeholder="+421...">
+      </div>
+      <div class="full">
+        <label for="leadDeliveryAddress">Miesto dodania / adresa</label>
+        <input id="leadDeliveryAddress" maxlength="300" placeholder="Mesto, PSČ, krajina">
+      </div>
+      <div>
+        <label for="leadExpectedValue">Odhadovaná hodnota obchodu (€)</label>
+        <input id="leadExpectedValue" type="number" min="0" max="1000000000" step="0.01" placeholder="Napr. 1250.00">
+      </div>
+      <div>
+        <label for="leadDetailStatus">Stav dopytu</label>
+        <select id="leadDetailStatus">
+          <option value="Nový dopyt">Nový dopyt</option>
+          <option value="Kontaktovaný">Kontaktovaný</option>
+          <option value="Ponuka odoslaná">Ponuka odoslaná</option>
+          <option value="Čaká na odpoveď">Čaká na odpoveď</option>
+          <option value="Objednávka potvrdená">Objednávka potvrdená</option>
+          <option value="Uzavretý">Uzavretý</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="detail-actions">
+      <button onclick="saveLeadDetails()">Uložiť údaje zákazníka</button>
+    </div>
+
+    <div class="detail-section">
+      <h2>História komunikácie s AI</h2>
+      <pre id="leadConversation" class="conversation-box">Bez záznamu komunikácie.</pre>
+    </div>
+
+    <div class="detail-section">
+      <h2>Interná poznámka</h2>
+      <p class="muted">Poznámky vidia iba používatelia prihlásení do tejto firmy. Nezobrazujú sa zákazníkovi v AI chate.</p>
+      <label for="leadNoteInput">Nová poznámka</label>
+      <textarea id="leadNoteInput" maxlength="2000" placeholder="Napr. Volal som zákazníkovi, čaká na cenovú ponuku..."></textarea>
+      <button onclick="addLeadNote()">Pridať poznámku</button>
+    </div>
+
+    <div class="detail-section">
+      <h2>Časová os aktivít</h2>
+      <div id="leadTimeline" class="timeline"></div>
+    </div>
+
+    <div class="detail-section" id="quoteSection">
+      <div class="section-heading">
+        <div>
+          <h2>Cenové ponuky</h2>
+          <p class="muted">Vytvorte návrh z firemného cenníka, skontrolujte ho, schváľte a až potom odošlite zákazníkovi.</p>
+        </div>
+        <button class="secondary" type="button" onclick="loadLeadQuotes()">Obnoviť ponuky</button>
+      </div>
+      <div id="quoteList"><div class="empty">Načítavam cenové ponuky...</div></div>
+
+      <div class="quote-builder">
+        <h3 style="font-size:18px;margin:0 0 8px">Vytvoriť návrh cenovej ponuky</h3>
+        <p class="muted">Ceny sa predvyplnia z katalógu firmy. Pred vytvorením môžete upraviť jednotkovú cenu, dopravu, zľavu aj DPH.</p>
+        <div class="detail-grid">
+          <div>
+            <label for="quoteProductSelect">Produkt</label>
+            <select id="quoteProductSelect"><option value="">Najskôr pridajte produkt do katalógu</option></select>
+            <label for="quoteQuantity">Množstvo</label>
+            <input id="quoteQuantity" type="number" min="0.001" step="0.001" value="1">
+          </div>
+          <div>
+            <label for="quoteUnitPrice">Jednotková cena (€)</label>
+            <input id="quoteUnitPrice" type="number" min="0" step="0.01" placeholder="Cena za jednotku">
+            <button type="button" onclick="addQuoteDraftLine()">Pridať položku do ponuky</button>
+          </div>
+        </div>
+        <div id="quoteDraftLines" class="quote-lines"><div class="pipeline-empty">Zatiaľ nie sú pridané žiadne položky.</div></div>
+        <div class="detail-grid">
+          <div>
+            <label for="quoteShipping">Doprava (€)</label>
+            <input id="quoteShipping" type="number" min="0" step="0.01" value="0">
+            <label for="quoteDiscount">Zľava (%)</label>
+            <input id="quoteDiscount" type="number" min="0" max="100" step="0.01" value="0">
+          </div>
+          <div>
+            <label for="quoteVatRate">DPH (%)</label>
+            <input id="quoteVatRate" type="number" min="0" max="100" step="0.01" value="0">
+            <label for="quoteValidityDays">Platnosť ponuky (dni)</label>
+            <input id="quoteValidityDays" type="number" min="1" max="90" step="1" value="7">
+          </div>
+          <div class="full">
+            <label for="quoteNotes">Poznámka a obchodné podmienky</label>
+            <textarea id="quoteNotes" maxlength="2000" placeholder="Napr. Dodanie po potvrdení objednávky. Platba podľa dohody."></textarea>
+          </div>
+        </div>
+        <div class="notice">DPH je predvolene 0 %. Sadzbu nastavte podľa skutočného daňového režimu firmy a pokynov účtovníka. Vytvorenie návrhu nič neodosiela. Zákazník dostane ponuku až po schválení a kliknutí na odoslanie.</div>
+        <div class="detail-actions"><button type="button" onclick="createQuoteDraft()">Vytvoriť návrh ponuky</button></div>
+      </div>
+    </div>
+  </section>
+</section>
+
+<section id="nastavenia" class="panel">
+  <h2>Nastavenia</h2>
+  <p class="muted">Nastavenia jazykov a správania AI budeme postupne rozširovať.</p>
+  <p>Verzia systému: NOVA AI Quote Management 1.0</p>
+  <p>Administrácia: prihlásený firemný účet</p>
+  <div class="notice">Prístup k firemným dopytom a nastaveniam je viazaný na účet overený serverom. Samotná adresa stránky neurčuje, ku ktorej firme máte prístup.</div>
+</section>
+<footer>NOVA AI – Inteligentný asistent pre firmy</footer>
+</main>
+</div>
+
+<script>
+"use strict";
+
+let currentUser = null;
+let searchDebounce = null;
+const linkedLeadId = new URLSearchParams(window.location.search).get("lead");
+
+const STATUSES = [
+  "Nový dopyt",
+  "Kontaktovaný",
+  "Ponuka odoslaná",
+  "Čaká na odpoveď",
+  "Objednávka potvrdená",
+  "Uzavretý"
+];
+
+function storageKey(name) {
+  const tenantId = currentUser?.tenantId || "unknown";
+  return `nova-${tenantId}-${name}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function showLogin(message = "") {
+  currentUser = null;
+  document.getElementById("adminApp").style.display = "none";
+  document.getElementById("loginScreen").style.display = "flex";
+  const errorBox = document.getElementById("loginError");
+  errorBox.textContent = message;
+  errorBox.style.display = message ? "block" : "none";
+}
+
+function showAdmin(user) {
+  currentUser = user;
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("adminApp").style.display = "flex";
+  document.getElementById("tenantLabel").textContent =
+    `${user.businessName} · účet: ${user.username}`;
+  document.getElementById("dashboardCompany").textContent = user.businessName;
+  document.getElementById("company").value = user.businessName || "";
+  document.getElementById("email").value = user.email || "";
+  document.getElementById("phone").value = user.phone || "";
+  document.getElementById("knowledge").value = user.knowledge || "";
+  loadProducts();
+  loadLeads();
+}
+
+async function checkSession() {
+  try {
+    const response = await fetch("/api/auth/me", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      showLogin();
+      return;
+    }
+    const data = await response.json();
+    if (!data.ok || !data.user) {
+      showLogin();
+      return;
+    }
+    showAdmin(data.user);
+  } catch (error) {
+    showLogin("Server sa nepodarilo kontaktovať. Skontrolujte, či NOVA AI beží.");
+  }
+}
+
+document.getElementById("loginForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = document.getElementById("loginButton");
+  const username = document.getElementById("loginUsername").value.trim();
+  const password = document.getElementById("loginPassword").value;
+  const errorBox = document.getElementById("loginError");
+
+  button.disabled = true;
+  button.textContent = "Prihlasujem...";
+  errorBox.style.display = "none";
+
+  try {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Prihlásenie sa nepodarilo.");
+    document.getElementById("loginPassword").value = "";
+    await checkSession();
+  } catch (error) {
+    errorBox.textContent = error.message;
+    errorBox.style.display = "block";
+  } finally {
+    button.disabled = false;
+    button.textContent = "Prihlásiť sa";
+  }
+});
+
+async function logout() {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin"
+    });
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+  showLogin("Boli ste odhlásený.");
+}
+
+async function handleUnauthorized(response) {
+  if (response.status === 401) {
+    showLogin("Prihlásenie vypršalo. Prihláste sa znova.");
+    return true;
+  }
+  return false;
+}
+
+async function saveCompany() {
+  if (!currentUser) return showLogin();
+  const name = document.getElementById("company").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const phone = document.getElementById("phone").value.trim();
+  const knowledge = document.getElementById("knowledge").value;
+
+  try {
+    const response = await fetch("/api/admin/company", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, phone, knowledge })
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Uloženie zlyhalo.");
+    currentUser.businessName = name;
+    currentUser.email = email;
+    currentUser.phone = phone;
+    currentUser.knowledge = knowledge;
+    document.getElementById("dashboardCompany").textContent = name;
+    document.getElementById("tenantLabel").textContent = `${name} · účet: ${currentUser.username}`;
+    alert("Firemné údaje boli uložené.");
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function saveKnowledge() {
+  await saveCompany();
+}
+
+async function importWebsite() {
+  if (!currentUser) return showLogin();
+
+  const urlInput = document.getElementById("websiteUrl");
+  const button = document.getElementById("websiteImportButton");
+  const status = document.getElementById("websiteImportStatus");
+  const url = urlInput.value.trim();
+
+  if (!url) {
+    status.textContent = "Najprv zadajte webovú adresu firmy.";
+    return;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    status.textContent = "Zadajte platnú webovú adresu vrátane https://.";
+    return;
+  }
+
+  if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+    status.textContent = "Povolené sú iba webové adresy HTTP a HTTPS.";
+    return;
+  }
+
+  button.disabled = true;
+  button.textContent = "Načítavam webovú stránku...";
+  status.textContent = "NOVA AI prehľadáva web. Môže to chvíľu trvať.";
+
+  try {
+    const response = await fetch("/api/admin/website-import", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+
+    if (await handleUnauthorized(response)) return;
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Import webovej stránky sa nepodaril.");
+    }
+
+    if (typeof data.knowledge !== "string") {
+      throw new Error("Server nevrátil aktualizované znalosti firmy.");
+    }
+
+    document.getElementById("knowledge").value = data.knowledge;
+    currentUser.knowledge = data.knowledge;
+
+    const pages = Number(data.pagesScanned) || 0;
+    const errors = Number(data.errorsCount) || 0;
+    status.textContent = `Import dokončený. Načítané stránky: ${pages}. Pridané znaky: ${Number(data.importedCharacters) || 0}.${errors ? ` Upozornenia pri načítaní: ${errors}.` : ""} Znalosti boli automaticky uložené.`;
+    urlInput.value = "";
+  } catch (error) {
+    status.textContent = "Chyba importu: " + error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Importovať web do znalostí AI";
+  }
+}
+
+let websiteProductPreviewId = null;
+let websiteProductPreviewItems = [];
+let websiteProductCanApprove = false;
+
+async function previewWebsiteProducts() {
+  if (!currentUser) return showLogin();
+  const input = document.getElementById('productImportUrl');
+  const button = document.getElementById('productPreviewButton');
+  const status = document.getElementById('productImportStatus');
+  const panel = document.getElementById('productImportPreview');
+  const url = input.value.trim();
+  if (!url) { status.textContent = 'Zadajte webovú adresu katalógu.'; return; }
+  try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); }
+  catch { status.textContent = 'Zadajte platnú adresu HTTP alebo HTTPS.'; return; }
+  button.disabled = true; button.textContent = 'Prehľadávam web...';
+  status.textContent = 'Vyhľadávam produkty a ceny. Môže to chvíľu trvať.';
+  panel.replaceChildren(); websiteProductPreviewId = null; websiteProductPreviewItems = []; websiteProductCanApprove = false;
+  try {
+    const response = await fetch('/api/admin/website-products/preview', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Produkty sa nepodarilo načítať.');
+    websiteProductPreviewId = data.previewId; websiteProductPreviewItems = data.items || [];
+    websiteProductCanApprove = data.canApprove === true && data.complete === true;
+    const diagnostics = data.diagnostics || {};
+    const crawlWarning = websiteProductCanApprove
+      ? 'Prehľadávanie dokončené; náhľad platí 15 minút.'
+      : `IMPORT ZABLOKOVANÝ — neúplné prehľadávanie. Dôvod: ${data.stopReason || (diagnostics.failedPages ? 'chyba stránky' : 'nepotvrdené dokončenie')}. Zostáva vo fronte: ${diagnostics.queueRemaining ?? 'neznáme'}. Zlyhané stránky: ${diagnostics.failedPages ?? data.errorsCount ?? 0}.`;
+    status.textContent = `Nájdené produkty: ${websiteProductPreviewItems.length}. Prehľadané stránky: ${data.pagesScanned}. ${crawlWarning}`;
+    renderWebsiteProductPreview();
+  } catch (error) { status.textContent = 'Chyba: ' + error.message; }
+  finally { button.disabled = false; button.textContent = 'Vyhľadať produkty a ceny'; }
+}
+
+function renderWebsiteProductPreview() {
+  const panel = document.getElementById('productImportPreview');
+  if (!panel) return;
+  panel.replaceChildren();
+  if (!websiteProductPreviewItems.length) return;
+  const table = document.createElement('table');
+  table.style.width = '100%'; table.style.borderCollapse = 'collapse'; table.style.marginTop = '14px';
+  const head = document.createElement('thead');
+  const header = document.createElement('tr');
+  ['Vybrať', 'Produkt / variant', 'Cena balenia', 'Jednotková cena', 'Veľkosť balenia', 'Typ ceny', 'Mena', 'Predajná jednotka', 'Porovnanie', 'Zdroj'].forEach(label => {
+    const th = document.createElement('th'); th.textContent = label; th.style.textAlign = 'left'; th.style.padding = '9px'; th.style.borderBottom = '1px solid #e5eaf0'; header.appendChild(th);
+  });
+  head.appendChild(header); table.appendChild(head);
+  const body = document.createElement('tbody');
+  websiteProductPreviewItems.forEach(item => {
+    const tr = document.createElement('tr');
+    const selectCell = document.createElement('td'); selectCell.style.padding = '9px';
+    const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.className = 'website-product-select'; checkbox.value = String(item.index); checkbox.checked = !!item.applicable; checkbox.disabled = !item.applicable; checkbox.style.width = 'auto'; selectCell.appendChild(checkbox); tr.appendChild(selectCell);
+    const variantLabel = item.isVariant ? `${item.variantGroupName || item.name} — ${item.variantName || 'variant'}${item.variantCount ? ` (${item.variantCount} veľkostí)` : ''}` : item.name; const cells = [variantLabel, `${Number(item.packagePrice ?? item.price).toLocaleString('sk-SK', {minimumFractionDigits:2, maximumFractionDigits:2})}`, Number(item.unitPrice) > 0 ? `${Number(item.unitPrice).toLocaleString('sk-SK', {minimumFractionDigits:2, maximumFractionDigits:4})} € / ${item.unitPriceUnit || 'jednotka'}` : 'nezistená', item.packageQuantity > 0 && item.packageUnit ? `${Number(item.packageQuantity).toLocaleString('sk-SK')} ${item.packageUnit}` : 'nezistené', item.priceType || 'neuvedené', item.currency, item.unit || 'neuvedené', item.change + (item.existingPrice != null ? ` (teraz ${Number(item.existingPrice).toLocaleString('sk-SK')} €)` : ''), item.sourceUrl];
+    cells.forEach((value, i) => { const td = document.createElement('td'); td.textContent = String(value ?? ''); if (i === 0 && item.couponPriceDetected) td.title = 'Zistená aj kupónová cena; zobrazená je cena bez kupónu.'; td.style.padding = '9px'; td.style.borderBottom = '1px solid #edf0f4'; td.style.fontSize = '13px'; if (i === 8) { const a = document.createElement('a'); a.href = item.sourceUrl; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'Otvoriť'; td.replaceChildren(a); } tr.appendChild(td); });
+    body.appendChild(tr);
+  });
+  table.appendChild(body); panel.appendChild(table);
+  const note = document.createElement('p'); note.className = 'muted'; note.textContent = 'Jednotková/porovnávacia cena a zistená veľkosť balenia sa zobrazujú oddelene od ceny balenia. Veľkosť balenia sa nikdy neodvodzuje iba z názvu. Ceny v inej mene, nejednoznačné ceny a neúplné prehľadávanie nemožno automaticky schváliť.'; panel.appendChild(note);
+  const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = websiteProductCanApprove ? 'Schváliť vybrané a uložiť do katalógu' : 'Schválenie zablokované — neúplný import'; approve.disabled = !websiteProductCanApprove; approve.onclick = approveWebsiteProducts; panel.appendChild(approve);
+}
+
+async function approveWebsiteProducts() {
+  if (!websiteProductPreviewId || !websiteProductCanApprove) return;
+  const selected = [...document.querySelectorAll('.website-product-select:checked')].map(input => Number(input.value));
+  if (!selected.length) { alert('Vyberte aspoň jeden produkt.'); return; }
+  if (!confirm(`Naozaj schváliť ${selected.length} vybraných položiek? Existujúce ceny sa aktualizujú až teraz.`)) return;
+  const status = document.getElementById('productImportStatus');
+  try {
+    const response = await fetch('/api/admin/website-products/approve', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previewId: websiteProductPreviewId, selected })
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Schválenie zlyhalo.');
+    status.textContent = `Import schválený. Nové produkty: ${data.added}, aktualizované ceny: ${data.updated}, bez zmeny: ${data.unchanged}.`;
+    websiteProductPreviewId = null; websiteProductPreviewItems = []; websiteProductCanApprove = false;
+    document.getElementById('productImportPreview').replaceChildren();
+    await loadProducts();
+  } catch (error) { status.textContent = 'Chyba schválenia: ' + error.message; }
+}
+
+let crmLeads = [];
+let crmProducts = [];
+let selectedLeadId = null;
+let quoteDraftLines = [];
+let leadQuotes = [];
+
+function getLeadById(id) {
+  return crmLeads.find(lead => String(lead.id) === String(id));
+}
+
+function formatDate(value) {
+  if (!value) return "Dátum neuvedený";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Dátum neuvedený";
+  return new Intl.DateTimeFormat("sk-SK", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  }).format(date);
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat("sk-SK", {
+    style: "currency", currency: "EUR"
+  }).format(Number.isFinite(amount) ? amount : 0);
+}
+
+function getLeadLabel(lead) {
+  return lead.customerName || lead.companyName || lead.email || lead.phone || lead.contact || `Dopyt ${lead.id}`;
+}
+
+function getFilteredLeads() {
+  const selectedStatus = document.getElementById("leadStatusFilter").value;
+  const searchTerm = document.getElementById("leadSearch").value.trim().toLowerCase();
+  return crmLeads.filter(lead => {
+    const status = lead.status || "Nový dopyt";
+    const matchesStatus = selectedStatus === "Všetky" || status === selectedStatus;
+    const searchableText = [
+      lead.customerName, lead.companyName, lead.email, lead.phone,
+      lead.contact, lead.deliveryAddress, lead.conversation
+    ].map(value => String(value || "")).join(" ").toLowerCase();
+    return matchesStatus && searchableText.includes(searchTerm);
+  });
+}
+
+function renderMetrics() {
+  const count = status => crmLeads.filter(lead => (lead.status || "Nový dopyt") === status).length;
+  const total = crmLeads.length;
+  const newCount = count("Nový dopyt");
+  const activeCount = count("Kontaktovaný") + count("Ponuka odoslaná") + count("Čaká na odpoveď");
+  const offered = count("Ponuka odoslaná");
+  const confirmed = count("Objednávka potvrdená");
+  const closed = count("Uzavretý");
+  const resolvedBase = confirmed + closed;
+  const conversion = resolvedBase ? (confirmed / resolvedBase) * 100 : 0;
+  const openValue = crmLeads
+    .filter(lead => !["Objednávka potvrdená", "Uzavretý"].includes(lead.status || "Nový dopyt"))
+    .reduce((sum, lead) => sum + (Number(lead.expectedValue) || 0), 0);
+
+  document.getElementById("totalLeads").textContent = total;
+  document.getElementById("newLeads").textContent = newCount;
+  document.getElementById("activeLeads").textContent = activeCount;
+  document.getElementById("sentOffers").textContent = offered;
+  document.getElementById("confirmedOrders").textContent = confirmed;
+  document.getElementById("closedLeads").textContent = closed;
+  document.getElementById("successRate").textContent = conversion.toFixed(1) + " %";
+  document.getElementById("pipelineValue").textContent = formatMoney(openValue);
+  document.getElementById("dashboardLeads").textContent = total;
+}
+
+function renderPipeline() {
+  const board = document.getElementById("pipelineBoard");
+  const filtered = getFilteredLeads();
+
+  board.innerHTML = STATUSES.map(status => {
+    const items = filtered
+      .filter(lead => (lead.status || "Nový dopyt") === status)
+      .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+    const cards = items.map(lead => `
+      <button type="button" class="pipeline-card" data-open-lead="${escapeHtml(lead.id)}">
+        <strong>${escapeHtml(getLeadLabel(lead))}</strong>
+        <small>${escapeHtml(lead.companyName || lead.contact || "Kontakt ešte nie je doplnený")}</small>
+        ${lead.deliveryAddress ? `<small>Dodanie: ${escapeHtml(lead.deliveryAddress)}</small>` : ""}
+        <small>${escapeHtml(formatDate(lead.createdAt))}</small>
+        ${Number(lead.expectedValue) > 0 ? `<small class="value">${escapeHtml(formatMoney(lead.expectedValue))}</small>` : ""}
+      </button>
+    `).join("");
+
+    return `
+      <div class="pipeline-column">
+        <div class="pipeline-head"><span>${escapeHtml(status)}</span><span class="pipeline-count">${items.length}</span></div>
+        ${cards || '<div class="pipeline-empty">Bez dopytov</div>'}
+      </div>
+    `;
+  }).join("");
+
+  board.querySelectorAll("[data-open-lead]").forEach(button => {
+    button.addEventListener("click", () => openLeadDetails(button.dataset.openLead));
+  });
+}
+
+function renderTimeline(lead) {
+  const container = document.getElementById("leadTimeline");
+  const activities = Array.isArray(lead.activities) ? [...lead.activities] : [];
+  activities.sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+
+  if (!activities.length) {
+    container.innerHTML = '<div class="empty">Zatiaľ nie sú zaznamenané žiadne interné aktivity. História pôvodného AI rozhovoru je uvedená vyššie.</div>';
+    return;
+  }
+
+  container.innerHTML = activities.map(activity => {
+    let title = "Aktivita";
+    if (activity.type === "created") title = "Dopyt vytvorený";
+    if (activity.type === "status") title = "Zmena stavu: " + (activity.to || "");
+    if (activity.type === "updated") title = "Upravené údaje zákazníka";
+    if (activity.type === "note") title = "Interná poznámka";
+    if (activity.type === "quote") title = "Cenová ponuka";
+    const text = activity.type === "status"
+      ? `Pôvodný stav: ${activity.from || "Nový dopyt"} → ${activity.to || ""}`
+      : (activity.text || "");
+    return `
+      <div class="timeline-item ${activity.type === "note" ? "note" : ""}">
+        <div class="timeline-title">${escapeHtml(title)}</div>
+        ${text ? `<div class="timeline-text">${escapeHtml(text)}</div>` : ""}
+        <div class="timeline-meta">${escapeHtml(activity.by || "Systém")} · ${escapeHtml(formatDate(activity.at))}</div>
+      </div>
+    `;
+  }).join("");
+}
+
+function openLeadDetails(id) {
+  const lead = getLeadById(id);
+  if (!lead) return;
+  selectedLeadId = String(lead.id);
+  document.getElementById("leadDetails").hidden = false;
+  document.getElementById("detailHeading").textContent = getLeadLabel(lead);
+  document.getElementById("detailSubheading").textContent =
+    `Dopyt vytvorený: ${formatDate(lead.createdAt)} · Posledná zmena: ${formatDate(lead.updatedAt || lead.createdAt)}`;
+  document.getElementById("leadCustomerName").value = lead.customerName || "";
+  document.getElementById("leadCompanyName").value = lead.companyName || "";
+  document.getElementById("leadEmail").value = lead.email || (String(lead.contact || "").includes("@") ? lead.contact : "");
+  document.getElementById("leadPhone").value = lead.phone || (!String(lead.contact || "").includes("@") ? lead.contact || "" : "");
+  document.getElementById("leadDeliveryAddress").value = lead.deliveryAddress || "";
+  document.getElementById("leadExpectedValue").value = lead.expectedValue ?? "";
+  document.getElementById("leadDetailStatus").value = lead.status || "Nový dopyt";
+  document.getElementById("leadConversation").textContent = lead.conversation || "Bez záznamu komunikácie.";
+  document.getElementById("leadNoteInput").value = "";
+  renderTimeline(lead);
+  quoteDraftLines = [];
+  renderQuoteDraftLines();
+  loadLeadQuotes();
+  document.getElementById("leadDetails").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeLeadDetails() {
+  selectedLeadId = null;
+  document.getElementById("leadDetails").hidden = true;
+}
+
+async function saveLeadDetails() {
+  if (!selectedLeadId) return;
+  const id = selectedLeadId;
+  const payload = {
+    customerName: document.getElementById("leadCustomerName").value,
+    companyName: document.getElementById("leadCompanyName").value,
+    email: document.getElementById("leadEmail").value,
+    phone: document.getElementById("leadPhone").value,
+    deliveryAddress: document.getElementById("leadDeliveryAddress").value,
+    expectedValue: document.getElementById("leadExpectedValue").value
+  };
+
+  try {
+    const response = await fetch(`/api/admin/leads/${encodeURIComponent(id)}/update`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Údaje sa nepodarilo uložiť.");
+
+    const newStatus = document.getElementById("leadDetailStatus").value;
+    const current = getLeadById(id);
+    if (current && (current.status || "Nový dopyt") !== newStatus) {
+      const statusResponse = await fetch(`/api/admin/leads/${encodeURIComponent(id)}/status`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (await handleUnauthorized(statusResponse)) return;
+      const statusData = await statusResponse.json();
+      if (!statusResponse.ok) throw new Error(statusData.error || "Zmenu stavu sa nepodarilo uložiť.");
+    }
+
+    await loadLeads();
+    openLeadDetails(id);
+    alert("Údaje zákazníka boli uložené.");
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function addLeadNote() {
+  if (!selectedLeadId) return;
+  const input = document.getElementById("leadNoteInput");
+  const text = input.value.trim();
+  if (!text) {
+    alert("Najskôr napíšte poznámku.");
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/admin/leads/${encodeURIComponent(selectedLeadId)}/notes`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Poznámku sa nepodarilo pridať.");
+    input.value = "";
+    const keepId = selectedLeadId;
+    await loadLeads();
+    openLeadDetails(keepId);
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function loadLeads() {
+  if (!currentUser) return;
+  const board = document.getElementById("pipelineBoard");
+  board.innerHTML = '<div class="empty">Načítavam obchodný lievik...</div>';
+
+  try {
+    const response = await fetch("/api/admin/leads", {
+      method: "GET",
+      credentials: "same-origin",
+      cache: "no-store"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Dopyty sa nepodarilo načítať.");
+
+    crmLeads = Array.isArray(data.leads) ? data.leads : [];
+    renderMetrics();
+    renderPipeline();
+
+    // A notification email may link directly to /admin/?lead=<id>.
+    // Only leads returned for the authenticated tenant can be opened here.
+    if (linkedLeadId) {
+      const linkedLead = getLeadById(linkedLeadId);
+      if (linkedLead) {
+        openLeadDetails(linkedLeadId);
+      } else if (selectedLeadId) {
+        const selected = getLeadById(selectedLeadId);
+        if (selected) openLeadDetails(selectedLeadId);
+        else closeLeadDetails();
+      }
+    } else if (selectedLeadId) {
+      const selected = getLeadById(selectedLeadId);
+      if (selected) openLeadDetails(selectedLeadId);
+      else closeLeadDetails();
+    }
+  } catch (error) {
+    board.textContent = "Chyba: " + error.message;
+  }
+}
+
+async function loadProducts() {
+  if (!currentUser) return;
+  const migrationKey = storageKey("productsMigrated");
+  if (!localStorage.getItem(migrationKey)) {
+    try {
+      const legacy = JSON.parse(localStorage.getItem(storageKey("products")) || "[]");
+      if (Array.isArray(legacy) && legacy.length) {
+        await fetch("/api/admin/products/import", {
+          method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: legacy })
+        });
+      }
+      localStorage.setItem(migrationKey, "1");
+    } catch (error) {
+      console.warn("Legacy product migration skipped:", error);
+    }
+  }
+  try {
+    const response = await fetch("/api/admin/products", { credentials: "same-origin", cache: "no-store" });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Produkty sa nepodarilo načítať.");
+    crmProducts = Array.isArray(data.products) ? data.products : [];
+    renderProducts();
+    renderQuoteProductOptions();
+  } catch (error) {
+    document.getElementById("productList").innerHTML = `<div class="empty">Chyba načítania produktov: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function addProduct() {
+  const name = document.getElementById("product").value.trim();
+  const price = Number(document.getElementById("price").value);
+  if (!name || !Number.isFinite(price) || price <= 0) {
+    alert("Vyplňte názov produktu a platnú cenu vyššiu ako 0 €.");
+    return;
+  }
+  try {
+    const response = await fetch("/api/admin/products", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, price, unit: "ks" })
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Produkt sa nepodarilo uložiť.");
+    document.getElementById("product").value = "";
+    document.getElementById("price").value = "";
+    await loadProducts();
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function deleteProduct(id) {
+  if (!confirm("Naozaj chcete vymazať tento produkt z firemného katalógu? Staršie cenové ponuky zostanú zachované.")) return;
+  try {
+    const response = await fetch(`/api/admin/products/${encodeURIComponent(id)}`, {
+      method: "DELETE", credentials: "same-origin"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Produkt sa nepodarilo vymazať.");
+    await loadProducts();
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+function renderProducts() {
+  const container = document.getElementById("productList");
+  if (!container) return;
+  if (!crmProducts.length) {
+    container.innerHTML = '<div class="empty">Zatiaľ nemáte pridané žiadne produkty. Pridajte ich vyššie a potom z nich vytvoríte cenovú ponuku.</div>';
+    return;
+  }
+  container.innerHTML = crmProducts.map(product => `
+    <div class="product-item">
+      <div><strong>${escapeHtml(product.name)}</strong><div class="muted">${escapeHtml(formatMoney(product.price))} / ${escapeHtml(product.unit || "ks")}</div></div>
+      <button class="danger delete-product" data-id="${escapeHtml(product.id)}">Vymazať</button>
+    </div>
+  `).join("");
+  container.querySelectorAll(".delete-product").forEach(button => {
+    button.addEventListener("click", () => deleteProduct(button.dataset.id));
+  });
+}
+
+function renderQuoteProductOptions() {
+  const select = document.getElementById("quoteProductSelect");
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = '<option value="">Vyberte produkt z firemného katalógu</option>' + crmProducts
+    .filter(product => product.active !== false)
+    .map(product => `<option value="${escapeHtml(product.id)}">${escapeHtml(product.name)} – ${escapeHtml(formatMoney(product.price))} / ${escapeHtml(product.unit || "ks")}</option>`)
+    .join("");
+  if (crmProducts.some(product => product.id === previous)) select.value = previous;
+  syncQuoteProductPrice();
+}
+
+function syncQuoteProductPrice() {
+  const id = document.getElementById("quoteProductSelect")?.value;
+  const product = crmProducts.find(item => item.id === id);
+  const priceInput = document.getElementById("quoteUnitPrice");
+  if (product && priceInput && (priceInput.value === "" || priceInput.dataset.productId !== id)) {
+    priceInput.value = Number(product.price).toFixed(2);
+    priceInput.dataset.productId = id;
+  }
+}
+
+function addQuoteDraftLine() {
+  const productId = document.getElementById("quoteProductSelect").value;
+  const product = crmProducts.find(item => item.id === productId && item.active !== false);
+  const quantity = Number(document.getElementById("quoteQuantity").value);
+  const unitPrice = Number(document.getElementById("quoteUnitPrice").value);
+  if (!product) return alert("Najskôr vyberte produkt z firemného katalógu.");
+  if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+    return alert("Skontrolujte množstvo a jednotkovú cenu.");
+  }
+  quoteDraftLines.push({ productId, name: product.name, unit: product.unit || "ks", quantity, unitPrice });
+  renderQuoteDraftLines();
+}
+
+function removeQuoteDraftLine(index) {
+  quoteDraftLines.splice(index, 1);
+  renderQuoteDraftLines();
+}
+
+function renderQuoteDraftLines() {
+  const container = document.getElementById("quoteDraftLines");
+  if (!container) return;
+  if (!quoteDraftLines.length) {
+    container.innerHTML = '<div class="pipeline-empty">Zatiaľ nie sú pridané žiadne položky.</div>';
+    return;
+  }
+  container.innerHTML = quoteDraftLines.map((line, index) => `
+    <div class="quote-line">
+      <strong>${escapeHtml(line.name)}</strong>
+      <span class="quote-line-meta">${escapeHtml(line.quantity)} ${escapeHtml(line.unit)} × ${escapeHtml(formatMoney(line.unitPrice))}</span>
+      <strong>${escapeHtml(formatMoney(line.quantity * line.unitPrice))}</strong>
+      <button class="danger" type="button" style="margin:0;padding:7px 10px" data-remove-quote-line="${index}">Odobrať</button>
+    </div>
+  `).join("");
+  container.querySelectorAll("[data-remove-quote-line]").forEach(button => {
+    button.addEventListener("click", () => removeQuoteDraftLine(Number(button.dataset.removeQuoteLine)));
+  });
+}
+
+async function createQuoteDraft() {
+  if (!selectedLeadId) return;
+  if (!quoteDraftLines.length) return alert("Pridajte aspoň jednu položku do cenovej ponuky.");
+  const payload = {
+    lines: quoteDraftLines.map(line => ({ productId: line.productId, quantity: line.quantity, unitPrice: line.unitPrice })),
+    shippingCost: document.getElementById("quoteShipping").value || 0,
+    discountPercent: document.getElementById("quoteDiscount").value || 0,
+    vatRate: document.getElementById("quoteVatRate").value || 0,
+    validityDays: document.getElementById("quoteValidityDays").value || 7,
+    notes: document.getElementById("quoteNotes").value
+  };
+  try {
+    const response = await fetch(`/api/admin/leads/${encodeURIComponent(selectedLeadId)}/quotes`, {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Návrh ponuky sa nepodarilo vytvoriť.");
+    quoteDraftLines = [];
+    document.getElementById("quoteNotes").value = "";
+    renderQuoteDraftLines();
+    await loadLeads();
+    await loadLeadQuotes();
+    alert(`Návrh ${data.quote.quoteNumber} bol vytvorený v hodnote ${formatMoney(data.quote.total)}. Zákazníkovi zatiaľ nebol odoslaný.`);
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function loadLeadQuotes() {
+  if (!selectedLeadId || !currentUser) return;
+  const container = document.getElementById("quoteList");
+  container.innerHTML = '<div class="empty">Načítavam cenové ponuky...</div>';
+  try {
+    const response = await fetch(`/api/admin/leads/${encodeURIComponent(selectedLeadId)}/quotes`, {
+      credentials: "same-origin", cache: "no-store"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Ponuky sa nepodarilo načítať.");
+    leadQuotes = Array.isArray(data.quotes) ? data.quotes : [];
+    renderLeadQuotes();
+  } catch (error) {
+    container.innerHTML = `<div class="empty">Chyba načítania ponúk: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function quoteStatusLabel(status) {
+  return ({ draft: "Návrh – čaká na schválenie", approved: "Schválená – čaká na odoslanie", sent: "Odoslaná zákazníkovi" })[status] || status;
+}
+
+function renderLeadQuotes() {
+  const container = document.getElementById("quoteList");
+  if (!container) return;
+  if (!leadQuotes.length) {
+    container.innerHTML = '<div class="empty">K tomuto dopytu zatiaľ nebola vytvorená cenová ponuka.</div>';
+    return;
+  }
+  container.innerHTML = leadQuotes.slice().reverse().map(quote => {
+    const rows = (quote.lines || []).map(line => `${escapeHtml(line.name)} – ${escapeHtml(line.quantity)} ${escapeHtml(line.unit || "ks")}`).join(" · ");
+    const actionButtons = quote.status === "draft"
+      ? `<button type="button" onclick="approveQuote('${escapeHtml(quote.id)}')">Schváliť ponuku</button><button type="button" class="danger" onclick="deleteQuoteDraft('${escapeHtml(quote.id)}')">Vymazať návrh</button>`
+      : quote.status === "approved"
+        ? `<button type="button" onclick="sendApprovedQuote('${escapeHtml(quote.id)}')">Odoslať zákazníkovi</button>`
+        : `<span class="muted">Odoslané na ${escapeHtml(quote.sentTo || "e-mail zákazníka")} · ${escapeHtml(formatDate(quote.sentAt))}</span>`;
+    return `<div class="quote-card"><div class="quote-card-head"><strong>${escapeHtml(quote.quoteNumber)}</strong><span class="quote-status">${escapeHtml(quoteStatusLabel(quote.status))}</span></div><p class="muted">Vytvorené: ${escapeHtml(formatDate(quote.createdAt))} · Platnosť do: ${escapeHtml(formatDate(quote.validUntil))}</p><div class="muted">${rows}</div><p class="quote-total">${escapeHtml(formatMoney(quote.total))}</p><div class="quote-actions">${actionButtons}</div></div>`;
+  }).join("");
+}
+
+async function approveQuote(id) {
+  if (!confirm("Potvrdzujete, že ste skontrolovali ceny, dopravu, zľavu, DPH a podmienky tejto ponuky?")) return;
+  try {
+    const response = await fetch(`/api/admin/quotes/${encodeURIComponent(id)}/approve`, {
+      method: "POST", credentials: "same-origin"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Ponuku sa nepodarilo schváliť.");
+    await loadLeadQuotes();
+    await loadLeads();
+    alert("Ponuka je schválená. Ešte nebola odoslaná zákazníkovi.");
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function sendApprovedQuote(id) {
+  const lead = getLeadById(selectedLeadId);
+  const recipient = lead?.email || lead?.contact || "e-mail zákazníka";
+  if (!confirm(`Odoslať schválenú cenovú ponuku na ${recipient}?`)) return;
+  try {
+    const response = await fetch(`/api/admin/quotes/${encodeURIComponent(id)}/send`, {
+      method: "POST", credentials: "same-origin"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Ponuku sa nepodarilo odoslať.");
+    await loadLeadQuotes();
+    await loadLeads();
+    alert(data.message || "Cenová ponuka bola odoslaná.");
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+async function deleteQuoteDraft(id) {
+  if (!confirm("Vymazať tento neschválený návrh cenovej ponuky?")) return;
+  try {
+    const response = await fetch(`/api/admin/quotes/${encodeURIComponent(id)}`, {
+      method: "DELETE", credentials: "same-origin"
+    });
+    if (await handleUnauthorized(response)) return;
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Návrh sa nepodarilo vymazať.");
+    await loadLeadQuotes();
+    await loadLeads();
+  } catch (error) {
+    alert("Chyba: " + error.message);
+  }
+}
+
+document.getElementById("leadStatusFilter").addEventListener("change", renderPipeline);
+document.getElementById("quoteProductSelect").addEventListener("change", syncQuoteProductPrice);
+document.getElementById("leadSearch").addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(renderPipeline, 180);
+});
+
+checkSession();
+</script>
+</body>
+</html>
