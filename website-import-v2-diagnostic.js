@@ -1321,7 +1321,7 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     // "Protein Latte - GymBeam čokoláda"). Preserve that option explicitly;
     // do not require a size/color field to recognize a real variant.
     const nameVariant = offerName && normalizeProductName(offerName) !== normalizeProductName(baseName)
-      ? cleanText(offerName.slice(baseName.length).replace(/^\s*[-–—,:|/]\s*/, ""), 120)
+      ? cleanText(offerName.slice(baseName.length).replace(/^\s*[-–—,:|\/]\s*/, ""), 120)
       : "";
     const sku = cleanText(offer.sku || offer.SKU || offer.productID || itemOffered.sku || itemOffered.SKU || itemOffered.productID || "", 160);
     const gtin = cleanText(offer.gtin || offer.gtin8 || offer.gtin12 || offer.gtin13 || offer.gtin14 || offer.ean || offer.ean13 ||
