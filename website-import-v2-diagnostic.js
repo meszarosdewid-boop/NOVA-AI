@@ -4690,12 +4690,12 @@ function getProductPageSignals(html, pageUrl, products, existingRoot = null) {
 function selectMainProduct(products, signals) {
   if (!products.length) return [];
 
-  const headingTokens = new Set((signals.heading || "").split(/\\s+/).filter(token => token.length > 1));
-  const pathTokens = new Set((signals.path || "").split(/\\s+/).filter(token => token.length > 1));
+  const headingTokens = new Set((signals.heading || "").split(/\s+/).filter(token => token.length > 1));
+  const pathTokens = new Set((signals.path || "").split(/\s+/).filter(token => token.length > 1));
 
   const scoreProduct = product => {
     const name = normalizeProductName(product.name);
-    const tokens = [...new Set(name.split(/\\s+/).filter(token => token.length > 1))];
+    const tokens = [...new Set(name.split(/\s+/).filter(token => token.length > 1))];
     if (!tokens.length) return 0;
 
     const overlap = source => {
