@@ -3537,7 +3537,23 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
   const looksLikeCategoryForVariantCheck = /\/(?:kategoria|category|categories|kolekcia|collection|collections|catalog|catalogue)\//i.test(pagePathForVariantCheck) ||
     $("[class*='product-card'], [class*='product-item'], [class*='product-tile']").length >= 4;
   if (jsonLdVariantSet.length >= 2 && $("h1").length > 0 && !looksLikeCategoryForVariantCheck) {
-    return deduplicateProducts(jsonLdVariantSet).slice(0, MAX_PRODUCTS_PER_PAGE);
+    const selectedVariants = deduplicateProducts(jsonLdVariantSet).slice(0, MAX_PRODUCTS_PER_PAGE);
+    return {
+      products: selectedVariants,
+      diagnostics: {
+        jsonLd: jsonLd.length,
+        microdata: 0,
+        metadata: 0,
+        embeddedJson: 0,
+        htmlCards: 0,
+        fourhomeCards: 0,
+        detailFallback: 0,
+        astroProductIslandFallback: 0,
+        primaryProductBuyBox: false,
+        jsonLdVariantFastPath: true,
+        total: selectedVariants.length
+      }
+    };
   }
 
   const microdata = extractMicrodataProducts(
