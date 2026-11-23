@@ -1317,10 +1317,18 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     const sizeText = cleanText(rawSize || nameSize, 100);
     const packageMeasure = sizeText ? parseExplicitPackageLabel(sizeText) : null;
     const color = cleanText(offer.color?.name || offer.color || itemOffered.color?.name || itemOffered.color || "", 120);
-    const sku = cleanText(offer.sku || offer.productID || itemOffered.sku || "", 160);
-    const variantLabel = [sizeText, color].filter(Boolean).join(" / ");
+    // A variant offer may identify its option only in its own name (e.g.
+    // "Protein Latte - GymBeam čokoláda"). Preserve that option explicitly;
+    // do not require a size/color field to recognize a real variant.
+    const nameVariant = offerName && normalizeProductName(offerName) !== normalizeProductName(baseName)
+      ? cleanText(offerName.slice(baseName.length).replace(/^\s*[-–—,:|\/]\s*/, ""), 120)
+      : "";
+    const sku = cleanText(offer.sku || offer.SKU || offer.productID || itemOffered.sku || itemOffered.SKU || itemOffered.productID || "", 160);
+    const gtin = cleanText(offer.gtin || offer.gtin8 || offer.gtin12 || offer.gtin13 || offer.gtin14 || offer.ean || offer.ean13 ||
+      itemOffered.gtin || itemOffered.gtin8 || itemOffered.gtin12 || itemOffered.gtin13 || itemOffered.gtin14 || itemOffered.ean || itemOffered.ean13 || "", 160);
+    const variantLabel = [sizeText, color, nameVariant].filter(Boolean).join(" / ");
     const name = offerName || (variantLabel ? `${baseName} — ${variantLabel}` : baseName);
-    const signature = [sku, sizeText, color, price, currency].join("|").toLowerCase();
+    const signature = [sku, gtin, sizeText, color, nameVariant, price, currency].join("|").toLowerCase();
     if (seen.has(signature)) continue;
     seen.add(signature);
 
@@ -1358,7 +1366,9 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
       variantAttributes: {
         ...(sizeText ? { size: sizeText } : {}),
         ...(color ? { color } : {}),
-        ...(sku ? { sku } : {})
+        ...(nameVariant ? { option: nameVariant } : {}),
+        ...(sku ? { sku } : {}),
+        ...(gtin ? { gtin } : {})
       },
       source: "json-ld-offer-variant"
     });
@@ -1367,7 +1377,8 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
   // Do not expand a collection of ordinary offers unless at least two offers
   // carry explicit variant identity. This prevents price tiers from becoming variants.
   const identifiable = records.filter(item => item.packageQuantity != null ||
-    Object.keys(item.variantAttributes || {}).length > 1 || item.variantAttributes?.sku);
+    Object.keys(item.variantAttributes || {}).length > 1 ||
+    item.variantAttributes?.sku || item.variantAttributes?.gtin || item.variantAttributes?.option);
   return identifiable.length >= 2 ? records : [];
 }
 
@@ -3310,9 +3321,31 @@ function deduplicateProducts(products) {
         !Number.isFinite(product.price) || product.price <= 0) continue;
 
     const url = normalizeProductUrl(product.url || product.sourceUrl || "");
+    // Variant records can share one canonical product URL and even one visible
+    // title while representing different sellable options (for example taste
+    // variants with separate SKU/EAN values). Include their strongest stable
+    // identifier in the identity key so deduplication merges extraction methods
+    // for the same variant without collapsing sibling variants into one item.
+    let variantIdentity = "";
+    if (product.isVariant === true) {
+      const identifiers = [
+        product.sku && `sku:${normalizeProductName(product.sku)}`,
+        product.gtin && `gtin:${normalizeProductName(product.gtin)}`,
+        product.mpn && `mpn:${normalizeProductName(product.mpn)}`,
+        product.productId && `id:${normalizeProductName(product.productId)}`
+      ].filter(Boolean);
+      if (identifiers.length) {
+        variantIdentity = identifiers.join("|");
+      } else {
+        const attributes = product.variantAttributes && typeof product.variantAttributes === "object"
+          ? Object.keys(product.variantAttributes).sort().map(key => `${normalizeProductName(key)}:${normalizeProductName(product.variantAttributes[key])}`).join("|")
+          : "";
+        variantIdentity = attributes || normalizeProductName(product.variantName || "");
+      }
+    }
     // Keep distinct items on a category URL, but merge conflicting extraction
-    // methods for the same product URL and title instead of importing twice.
-    const key = `${url}|${normalizeProductName(product.name)}`;
+    // methods for the same product URL/title/variant identity.
+    const key = `${url}|${normalizeProductName(product.name)}${variantIdentity ? `|variant:${variantIdentity}` : ""}`;
     const existingIndex = byIdentity.get(key);
     if (existingIndex !== undefined) {
       const existing = result[existingIndex];
@@ -3537,7 +3570,26 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
   const looksLikeCategoryForVariantCheck = /\/(?:kategoria|category|categories|kolekcia|collection|collections|catalog|catalogue)\//i.test(pagePathForVariantCheck) ||
     $("[class*='product-card'], [class*='product-item'], [class*='product-tile']").length >= 4;
   if (jsonLdVariantSet.length >= 2 && $("h1").length > 0 && !looksLikeCategoryForVariantCheck) {
-    return deduplicateProducts(jsonLdVariantSet).slice(0, MAX_PRODUCTS_PER_PAGE);
+    // Keep the same return contract as the normal extraction path.
+    // extractWebsiteContent() expects { products, diagnostics }; returning a
+    // bare array here caused valid JSON-LD variants to disappear in the crawler.
+    const variantProducts = deduplicateProducts(jsonLdVariantSet).slice(0, MAX_PRODUCTS_PER_PAGE);
+    return {
+      products: variantProducts,
+      diagnostics: {
+        jsonLd: jsonLd.length,
+        microdata: 0,
+        metadata: 0,
+        embeddedJson: 0,
+        htmlCards: 0,
+        fourhomeCards: 0,
+        detailFallback: 0,
+        astroProductIslandFallback: 0,
+        primaryProductBuyBox: false,
+        jsonLdVariantFastPath: true,
+        total: variantProducts.length
+      }
+    };
   }
 
   const microdata = extractMicrodataProducts(
