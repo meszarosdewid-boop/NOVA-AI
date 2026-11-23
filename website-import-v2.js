@@ -4797,7 +4797,27 @@ function selectMainProduct(products, signals) {
   // A direct-product request must never fall back to the first arbitrary card
   // on the page. If no extracted record matches the H1/URL, return no product
   // rather than importing a bestseller or recommendation by mistake.
-  return ranked[0].score >= 0.20 ? [ranked[0].product] : [];
+  const best = ranked[0];
+  if (!best || best.score < 0.20) return [];
+
+  // A product page can describe several sellable options as separate
+  // schema.org Offer records under one Product/AggregateOffer. Once those
+  // offers have been expanded into verified JSON-LD variants, do not collapse
+  // the group to the single flavour whose name scores highest against H1/URL.
+  // Keep the whole group, but only when at least two distinct records share
+  // the same explicit variantGroupId.
+  if (best.product.isVariant === true &&
+      best.product.source === "json-ld-offer-variant" &&
+      best.product.variantGroupId) {
+    const group = products.filter(product =>
+      product.isVariant === true &&
+      product.source === "json-ld-offer-variant" &&
+      product.variantGroupId === best.product.variantGroupId
+    );
+    if (group.length >= 2) return group;
+  }
+
+  return [best.product];
 }
 
 function sortQueue(queue) {
