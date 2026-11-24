@@ -1,0 +1,39 @@
+NOVA AI WEBSITE IMPORTER V3.28 — CHANGE AND AUDIT NOTES
+
+Basis:
+- Built from the user's latest saved audited V3.27 package.
+- User's latest local Preview diagnostic reported pages 11 and 12 each with products: 250; page 13 failed with "Odpoved prekrocila povolenu velkost."; page 14 URL switched to /sodastream-a-dalsie-vyrobniky-perlivej-vody/ and also failed oversized.
+
+Live 4home category evidence:
+- Official category page: https://www.4home.sk/ulozny-nabytok/
+- Search-indexed page identifies the category as "Úložný nábytok", exposes subcategories Skrinky na topánky, Komody, Regály, Skrine a skrinky, Predsieňové zostavy, Kancelárske kontajnery, and shows 506 products.
+- Filters include price, brand, colour, collection, decor, width, height and depth. Brand facet counts include Hanah Home (396), Autronic (56), Aldotrade (2), Brilanz (1), Phoenix (2), Wenko (1). These facet counts are not a guarantee of unique product totals.
+- Current browser audit is still in progress; do not treat a page-by-page overlap audit as complete until the browser run returns a final result.
+
+V3.28 changes:
+- General website response limit remains 8 MiB.
+- 4home-only response limit raised to 16 MiB, bounded per response.
+- 4home total crawl budget remains 60 MiB; 4home max pages/time remain unchanged.
+- Added strict same-host and exact-starting-path guard for every queued 4home URL. This blocks category drift into unrelated paths, including SodaStream.
+- Added effective response limit to diagnostics and bumped diagnostic importerVersion to V3.28.
+- Did not change product parser, prices, identity keys, deduplication or any catalogue-write behavior.
+
+Checks performed:
+- node --check website-import-v2.js: PASS.
+- node --check test-4home-extractor.mjs: PASS.
+- node --check OPTIONAL/server.js: PASS.
+- node test-v328-guards.mjs: PASS.
+- Synthetic extractor test not run; dependencies not installed in this environment.
+- Local NOVA server end-to-end test not performed.
+- No product approval/import and no catalogue modification.
+
+Additional live browser audit (completed 2026-11-18):
+- Category page metadata: breadcrumb 4Home > Nábytok > Úložný nábytok; UI shows 506 products and 13 pagination pages.
+- Page contains category subnavigation: Botníky, Komody, Regály, Kancelárske kontajnery, Predsieňové zostavy, Skrine a skrinky, Police a poličky, Vešiaky a háčiky.
+- Product cards expose names, current prices, some original prices, and product-slug URLs. Sample cards include Aldotrade Komoda RETRO NEW, Knižnica Zipa Oak, Skrinka Shans Oak and White, Komoda Vintage, LOFTY Slim Classic Oak rack, and several shoe cabinets.
+- Load-more button is present and labelled "Načítať ďalšie produkty". Browser automation observed the remaining counter decrease 466 -> 426 -> 386 -> 306. Counts reported by the browser agent varied between 40 and 50 visible/added cards, so exact batch size is NOT certified.
+- Direct navigation to /ulozny-nabytok/?skip=&p=2&ajax_loading=rewrite returned a full HTML category page with 50 cards and still displayed page 1 active; this does not prove that URL is the actual AJAX fragment endpoint.
+- The second direct test of /filter-ajax/ulozny-nabytok/?skip=&p=2&ajax_loading=rewrite was not completed. The exact AJAX request method/path must not be treated as proven by this run.
+- Clicking a generic "Nasledujúce" control led the browser to /nabytok/predsinen-a-chodby/, a different category. This confirms that navigation controls must be checked by destination path, not label alone.
+- Earlier user diagnostics listed page 14 as /sodastream-a-dalsie-vyrobniky-perlivej-vody/. V3.28 exact-path guard blocks both category escapes.
+- Overall completeness remains unverified: browser automation did not retrieve all 506 products or confirm page-by-page unique coverage.

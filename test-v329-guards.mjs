@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source = fs.readFileSync(new URL('./website-import-v2.js', import.meta.url), 'utf8');
+assert.match(source, /const FOURHOME_MAX_BYTES = 32 \* 1024 \* 1024;/, '4home response cap should be 32 MiB');
+assert.match(source, /const MAX_PRODUCTS_PER_PAGE = 1500;/, 'extractor page cap raised to 1500');
+assert.match(source, /const FOURHOME_MAX_TOTAL_BYTES = 100 \* 1024 \* 1024;/, 'total 4home cap remains bounded at 100 MiB');
+assert.match(source, /products\.length >= 5000/g, 'global product cap raised to 5000');
+assert.match(source, /importerVersion: "V3\.29"/);
+assert.match(source, /candidatePath !== fourhomeCategoryPath/, '4home crawler remains category-path scoped');
+assert.match(source, /collectedProductKeys\.has\(identityKey\)/, 'cumulative 4home product dedupe remains in place');
+console.log('PASS V3.29 static guard tests');

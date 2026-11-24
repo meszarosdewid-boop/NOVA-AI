@@ -2411,7 +2411,13 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           JSON.stringify(old.variantAttributes || {}) !== JSON.stringify(item.variantAttributes || {}) ||
           JSON.stringify(old.variantOptions || []) !== JSON.stringify(item.variantOptions || [])
         );
-        if (samePrice && !needsVariantMetadata && !needsPriceMetadata) { unchanged++; continue; }
+        const needsIdentifierMetadata =
+          String(old.sku || "") !== String(item.sku || "") ||
+          String(old.gtin || "") !== String(item.gtin || "") ||
+          String(old.mpn || "") !== String(item.mpn || "") ||
+          String(old.productId || "") !== String(item.productId || "") ||
+          String(old.brand || "") !== String(item.brand || "");
+        if (samePrice && !needsVariantMetadata && !needsPriceMetadata && !needsIdentifierMetadata) { unchanged++; continue; }
         products[existingIndex] = {
           ...old, price: roundMoney(item.price),
           packagePrice: roundMoney(item.packagePrice ?? item.price),
