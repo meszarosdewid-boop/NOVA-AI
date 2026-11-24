@@ -7,8 +7,10 @@ import ipaddr from "ipaddr.js";
 import { load as loadHtml } from "cheerio";
 
 // ==========================================
-// NOVA AI - WEBSITE IMPORTER V3.66
-// Universal product import: structured data, listings, flexible product detail pricing, variants and deduplication
+// NOVA AI - WEBSITE IMPORTER V3.76
+// Universal product import: multilingual variant discovery, product dimensions and per-parcel package breakdown
+// V3.75 preserves DOM-only physical specs in JSON-LD variant fast-path and reads standalone package text nodes.
+// Preserves V3.73 multilingual variants and the GymBeam JSON-LD offer-group fix.
 // produktov a cien
 // ==========================================
 
@@ -908,6 +910,883 @@ export function extractExplicitNetPackageMeasureFromText(value) {
   };
 }
 
+// Physical product specifications are distinct from the sellable package content.
+// Dimensions are normalized to centimetres, weights to kilograms and volume to litres;
+// the original source text is retained for an accurate merchant-facing display.
+const PHYSICAL_DIMENSION_AXES = ["width", "height", "depth", "length", "diameter", "thickness"];
+
+function normalizePhysicalUnit(value) {
+  const raw = cleanText(String(value || ""), 40).toLowerCase().replace(/\s+/g, "").replace(/\.$/, "");
+  const map = {
+    cmt: "cm", centimeter: "cm", centimetre: "cm", centimeters: "cm", centimetres: "cm",
+    mmt: "mm", millimeter: "mm", millimetre: "mm", millimeters: "mm", millimetres: "mm",
+    mtr: "m", meter: "m", metre: "m", meters: "m", metres: "m",
+    inh: "in", inch: "in", inches: "in", in: "in", '"': "in",
+    fot: "ft", foot: "ft", feet: "ft", ft: "ft",
+    kgm: "kg", kilogram: "kg", kilograms: "kg", kilogramme: "kg", kilogrammes: "kg",
+    grm: "g", gram: "g", grams: "g", milligram: "mg", milligrams: "mg", mg: "mg",
+    lbr: "lb", pound: "lb", pounds: "lb", lb: "lb",
+    ltr: "l", liter: "l", litre: "l", liters: "l", litres: "l",
+    milliliter: "ml", millilitre: "ml", milliliters: "ml", millilitres: "ml"
+  };
+  return map[raw] || (["cm", "mm", "m", "in", "ft", "kg", "g", "mg", "lb", "l", "ml"].includes(raw) ? raw : null);
+}
+
+function parsePhysicalMeasurement(raw, unitHint = "", kind = "dimension") {
+  let value = raw;
+  let unit = unitHint;
+  if (raw && typeof raw === "object") {
+    value = raw.value ?? raw.amount ?? raw.quantityValue ?? raw.valueText ?? raw.text ?? raw.name;
+    unit = raw.unitText || raw.unitCode || raw.unit || raw.measurementUnit || raw.unitOfMeasure || unitHint;
+  }
+  if (value == null || value === "") return null;
+  const text = decodeEntities(String(value)).replace(/\u00a0/g, " ").trim();
+  const match = text.match(/^\s*([+-]?\d+(?:[.,]\d+)?)\s*(mm|cm|m|inches?|inch|in|ft|feet|kg|g|mg|lb|lbs|l|ml)?\s*$/i);
+  if (!match) return null;
+  const number = Number(match[1].replace(",", "."));
+  const sourceUnit = normalizePhysicalUnit(match[2] || unit);
+  if (!Number.isFinite(number) || number <= 0 || !sourceUnit) return null;
+
+  let normalized = number;
+  let normalizedUnit = sourceUnit;
+  if (kind === "dimension") {
+    const factors = { mm: 0.1, cm: 1, m: 100, in: 2.54, ft: 30.48 };
+    if (!(sourceUnit in factors)) return null;
+    normalized = number * factors[sourceUnit];
+    normalizedUnit = "cm";
+  } else if (kind === "weight") {
+    const factors = { kg: 1, g: 0.001, mg: 0.000001, lb: 0.45359237 };
+    if (!(sourceUnit in factors)) return null;
+    normalized = number * factors[sourceUnit];
+    normalizedUnit = "kg";
+  } else if (kind === "volume") {
+    const factors = { l: 1, ml: 0.001 };
+    if (!(sourceUnit in factors)) return null;
+    normalized = number * factors[sourceUnit];
+    normalizedUnit = "l";
+  }
+  return { value: Math.round(normalized * 10000) / 10000, unit: normalizedUnit };
+}
+
+function normalizePhysicalLabel(value) {
+  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/ł/g, "l").replace(/ß/g, "ss")
+    .replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractDimensionVariant(value) {
+  const text = decodeEntities(String(value || "")).replace(/\u00a0/g, " ").trim();
+  if (!text) return null;
+  // Accept 2D and 3D dimensions, with the unit written once at the end
+  // (e.g. 200x66x201 cm, 80 × 40 cm, 1200 x 800 x 25 mm).
+  const match = text.match(/(\d+(?:[.,]\d+)?)\s*(?:mm|cm)?\s*[x×]\s*(\d+(?:[.,]\d+)?)(?:\s*(?:mm|cm)?\s*[x×]\s*(\d+(?:[.,]\d+)?))?\s*(mm|cm)\b/i);
+  if (!match) return null;
+  const unit = normalizePhysicalUnit(match[4]);
+  const values = [match[1], match[2], match[3]].filter(Boolean).map(value => Number(value.replace(",", ".")));
+  if (!unit || values.some(value => !Number.isFinite(value) || value <= 0)) return null;
+  const factor = unit === "mm" ? 0.1 : 1;
+  const cmValues = values.map(value => Math.round(value * factor * 10000) / 10000);
+  const formattedValues = cmValues.map(value => Number.isInteger(value) ? String(value) : String(value).replace(/0+$/, "").replace(/\.$/, ""));
+  const size = `${formattedValues.join(" × ")} cm`;
+  const dimensions = {
+    width: cmValues[0] ?? null,
+    height: null,
+    depth: null,
+    length: null,
+    unit: "cm",
+    raw: size,
+    source: "dom:variant-size-selector"
+  };
+  if (cmValues.length === 2) dimensions.height = cmValues[1];
+  if (cmValues.length === 3) {
+    dimensions.depth = cmValues[1];
+    dimensions.height = cmValues[2];
+  }
+  return { size, values: cmValues, unit: "cm", dimensions };
+}
+
+function normalizeVariantMarker(value) {
+  return normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function isExplicitSizeVariantMarker(value) {
+  const text = normalizeVariantMarker(value);
+  return /(?:\bvybrat(?:e)?\s+(?:si\s+)?(?:rozmer|rozmery|velkost|velkosti)\b|\bvyber(?:te|at)?\s+(?:si\s+)?(?:rozmer|rozmery|velkost|velkosti)\b|\bzvol(?:te|it)?\s+(?:rozmer|velkost)\b|rozmerove\s+varianty|velkostne\s+varianty|choose\s+(?:a\s+)?(?:size|dimension)|select\s+(?:a\s+)?(?:size|dimension)|size\s+variants|choose\s+size|select\s+size|groesse\s+waehlen|tailles?\s+a\s+choisir|choisir\s+la\s+taille|elegir\s+tama[nñ]o|scegli\s+la\s+misura|scegli\s+la\s+taglia|wybierz\s+rozmiar|kies\s+maat)/i.test(text);
+}
+
+function parsePhysicalAxisLine(value) {
+  const text = decodeEntities(String(value || "")).replace(/\u00a0/g, " ").trim();
+  const match = text.match(/^(.{2,36}?)\s*[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(mm|cm|m|in|inch|ft)\s*$/i);
+  if (!match) return null;
+  const label = normalizePhysicalLabel(match[1]).replace(/[^a-z0-9 ]/g, "").trim();
+  const axisMap = [
+    ["width", /^(?:sirka|width|w|breite|largeur|larghezza|ancho|szerokosc)$/],
+    ["height", /^(?:vyska|height|h|hoehe|hauteur|altezza|altura|wysokosc)$/],
+    ["depth", /^(?:hlbka|hloubka|depth|tiefe|profondeur|profondita|profundidad|glebokosc)$/],
+    ["length", /^(?:dlzka|length|l|laenge|longueur|lunghezza|dlugosc)$/]
+  ];
+  const axis = axisMap.find(([, pattern]) => pattern.test(label))?.[0];
+  if (!axis) return null;
+  const measurement = parsePhysicalMeasurement(`${match[2]} ${match[3]}`, "", "dimension");
+  return measurement ? { axis, value: measurement.value, raw: text } : null;
+}
+
+function parsePackageWeightLine(value) {
+  const rawText = decodeEntities(String(value || "")).replace(/\u00a0/g, " ").trim();
+  const text = normalizePhysicalLabel(rawText);
+  const match = text.match(/(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)\s*(?:(do|max(?:imum)?|up\s+to|bis\s+zu)\s*)?[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|g|lb|lbs)\b/i);
+  if (!match) return null;
+  const measurement = parsePhysicalMeasurement(`${match[2]} ${match[3]}`, "", "weight");
+  if (!measurement) return null;
+  return { value: measurement.value, unit: "kg", qualifier: match[1] ? "upper-bound" : "exact", raw: rawText };
+}
+
+function parseShippingPackageBlocks(inputBlocks) {
+  const blocks = (Array.isArray(inputBlocks) ? inputBlocks : []).map(block =>
+    typeof block === "string" ? { text: block, tag: "" } : { text: String(block?.text || ""), tag: String(block?.tag || "").toLowerCase() }
+  ).filter(block => block.text.trim());
+  const normalize = value => normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
+  const packageHeading = /^(?:balenie|balenia|packages?|packaging|package details|package information|verpackung|pakete|opakowanie|opakowania|imballaggio|emballage|embalaje|colis)$/i;
+  let start = blocks.findIndex(block => packageHeading.test(normalize(block.text)));
+  if (start < 0) {
+    start = blocks.findIndex(block => /^(?:tento vyrobok pozostava z|this product consists of|product consists of|dieses produkt besteht aus|ce produit comprend)\b/i.test(normalize(block.text)));
+    if (start < 0) return {};
+  }
+  const section = blocks.slice(start + 1);
+  const totalCountPattern = /(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,50}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*(\d{1,3})\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i;
+  let packageCount = null;
+  for (const block of blocks.slice(start, Math.min(blocks.length, start + 45))) {
+    const count = normalize(block.text).match(totalCountPattern);
+    if (count) { packageCount = Number(count[1]); break; }
+  }
+
+  const packages = [];
+  let group = null;
+  let currentPackage = null;
+  let sawExplicitPackageIndex = false;
+
+  const flushPackage = () => {
+    if (!currentPackage) return;
+    const dims = currentPackage.dimensions;
+    const hasDimensions = dims && [dims.width, dims.height, dims.depth, dims.length].some(value => Number(value) > 0);
+    if (hasDimensions || Number(currentPackage.weight) > 0) {
+      packages.push({
+        component: currentPackage.component || group?.componentName || group?.componentCode || "Prepravné balenie",
+        ...(group?.componentCode ? { componentCode: group.componentCode } : {}),
+        ...(group?.sku ? { componentSku: group.sku } : {}),
+        quantity: Number(currentPackage.quantity) > 0 ? Number(currentPackage.quantity) : 1,
+        ...(Number(currentPackage.packageNo) > 0 ? { packageNo: Number(currentPackage.packageNo) } : {}),
+        ...(hasDimensions ? { dimensions: { ...dims, unit: "cm", source: "dom:package-breakdown" } } : {}),
+        ...(Number(currentPackage.weight) > 0 ? { weight: Number(currentPackage.weight), weightUnit: "kg", weightQualifier: currentPackage.weightQualifier || "exact", weightSource: "dom:package-breakdown" } : {})
+      });
+    }
+    currentPackage = null;
+  };
+  const flushGroup = () => {
+    flushPackage();
+    group = null;
+    sawExplicitPackageIndex = false;
+  };
+  const ensurePackage = () => {
+    if (!group) group = { quantity: 1, componentCode: "", componentName: "", sku: "" };
+    if (!currentPackage) {
+      currentPackage = {
+        quantity: group.quantity || 1,
+        component: group.componentName || group.componentCode || "Prepravné balenie",
+        dimensions: { width: null, height: null, depth: null, length: null, unit: "cm", raw: null }
+      };
+    }
+    return currentPackage;
+  };
+
+  for (const block of section) {
+    const raw = block.text.replace(/\u00a0/g, " ").trim();
+    const text = normalize(raw);
+    if (!text) continue;
+    if (/^(?:tento vyrobok sa sklada z viacerych sucasti|tento vyrobok pozostava z tychto casti|this product is made up of several parts|this product consists of multiple parts|parts included|included components|components included|suciast[ií]|components)$/i.test(text)) break;
+
+    const packageNo = text.match(/^(?:balenie|package|parcel|paket|colis)\s*(?:c\.?\s*)?(\d{1,3})\b/i);
+    if (packageNo) {
+      flushPackage();
+      if (!group) group = { quantity: 1, componentCode: "", componentName: "", sku: "" };
+      sawExplicitPackageIndex = true;
+      currentPackage = {
+        quantity: 1,
+        packageNo: Number(packageNo[1]),
+        component: group.componentName || group.componentCode || "Prepravné balenie",
+        dimensions: { width: null, height: null, depth: null, length: null, unit: "cm", raw: null }
+      };
+      continue;
+    }
+
+    const groupMatch = raw.match(/^(\d{1,2})\s*[x×]\s*([\p{L}\p{N}_./-][\p{L}\p{N} _./-]{0,60})$/u);
+    if (groupMatch && !extractDimensionVariant(raw)) {
+      flushGroup();
+      group = { quantity: Number(groupMatch[1]), componentCode: cleanText(groupMatch[2], 80), componentName: "", sku: "" };
+      continue;
+    }
+
+    const skuOnly = raw.match(/^([A-Z0-9]{2,10}(?:[.-][A-Z0-9]{2,10}){1,3})$/i);
+    if (skuOnly) {
+      if (!group) group = { quantity: 1, componentCode: "", componentName: "", sku: "" };
+      if (!group.sku) group.sku = skuOnly[1];
+      continue;
+    }
+
+    const axis = parsePhysicalAxisLine(raw);
+    if (axis) {
+      const item = ensurePackage();
+      item.dimensions[axis.axis] = axis.value;
+      item.dimensions.raw = item.dimensions.raw ? `${item.dimensions.raw} × ${axis.raw}` : axis.raw;
+      continue;
+    }
+    const weight = parsePackageWeightLine(raw);
+    if (weight) {
+      const item = ensurePackage();
+      item.weight = weight.value;
+      item.weightQualifier = weight.qualifier;
+      continue;
+    }
+
+    // The first descriptive line after a quantity/brand marker is the component name.
+    // Other text (installation notes, materials, legal copy) is ignored.
+    if (group && !group.componentName && !/^(?:balenie|package|parcel|paket|colis)\b/i.test(text) && raw.length <= 100 && !/\d{3}[.-]\d{3}[.-]\d{2,3}/.test(raw)) {
+      group.componentName = cleanText(raw, 100);
+      if (currentPackage && !currentPackage.component) currentPackage.component = group.componentName;
+    }
+  }
+  flushGroup();
+  if (!packages.length) return {};
+
+  const inferredCount = packages.reduce((sum, item) => sum + (Number(item.quantity) > 0 ? Number(item.quantity) : 1), 0);
+  packageCount = packageCount || inferredCount;
+  // Never publish a sum based on only the subset of parcels that the page parser
+  // happened to expose. IKEA-like pages may show a declared total count (e.g. 9)
+  // while some nested parcel labels are rendered in leaf div/span elements.
+  // A total is trustworthy only when the parsed parcel quantities cover the
+  // declared count AND every parsed parcel has a weight.
+  const parcelCountMatches = !packageCount || inferredCount === packageCount;
+  const completeWeights = parcelCountMatches && packages.every(item => Number(item.weight) > 0);
+  const totalWeight = completeWeights
+    ? Math.round(packages.reduce((sum, item) => sum + Number(item.weight) * (Number(item.quantity) || 1), 0) * 10000) / 10000
+    : null;
+  const largest = packages
+    .filter(item => item.dimensions && Number(item.dimensions.width) > 0 && Number(item.dimensions.height) > 0 && (Number(item.dimensions.depth) > 0 || Number(item.dimensions.length) > 0))
+    .map(item => ({ item, volume: Number(item.dimensions.width) * Number(item.dimensions.height) * Number(item.dimensions.length || item.dimensions.depth) }))
+    .sort((a, b) => b.volume - a.volume)[0]?.item;
+
+  return {
+    shippingPackages: packages.slice(0, 80),
+    packageCount,
+    packageCountSource: packageCount ? "dom:package-section" : null,
+    shippingPackageSource: "dom:package-breakdown",
+    ...(largest ? { shippingDimensions: { ...largest.dimensions, source: "dom:package-breakdown-largest", raw: largest.dimensions.raw || null } } : {}),
+    ...(totalWeight != null ? {
+      shippingWeight: totalWeight,
+      shippingWeightUnit: "kg",
+      shippingWeightQualifier: packages.some(item => item.weightQualifier === "upper-bound") ? "upper-bound" : "exact",
+      shippingWeightSource: packages.some(item => item.weightQualifier === "upper-bound") ? "dom:package-breakdown-total-upper-bound" : "dom:package-breakdown-total"
+    } : {})
+  };
+}
+
+function extractProductDimensionsFromBlocks(inputBlocks) {
+  const blocks = (Array.isArray(inputBlocks) ? inputBlocks : []).map(block =>
+    typeof block === "string" ? { text: block, tag: "" } : { text: String(block?.text || ""), tag: String(block?.tag || "").toLowerCase() }
+  );
+  const normalize = value => normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
+  const headingPattern = /^(?:rozmery|rozmery produktu|dimensions|product dimensions|measurements|abmessungen|misure|dimensiones)$/i;
+  const start = blocks.findIndex(block => headingPattern.test(normalize(block.text)));
+  const result = { width: null, height: null, depth: null, length: null, diameter: null, thickness: null, unit: "cm", raw: null, source: "dom:dimensions-section" };
+  // IKEA-like pages sometimes publish assembled dimensions as an unlabeled
+  // list of axes (Šírka / Hĺbka / Výška) without a preceding "Rozmery" heading.
+  // In that case collect the first axis group before the package section. Do
+  // not scan into logistics rows, which describe cartons, not the assembled item.
+  if (start < 0) {
+    const packageStart = blocks.findIndex(block =>
+      /^(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,70}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(normalize(block.text)) ||
+      /^(?:balenie|balenia|packages?|packaging)$/i.test(normalize(block.text))
+    );
+    const limit = packageStart >= 0 ? packageStart : blocks.length;
+    for (let index = 0; index < limit; index++) {
+      const axis = parsePhysicalAxisLine(blocks[index].text);
+      if (axis) result[axis.axis] = axis.value;
+    }
+    const foundUnheaded = ["width", "height", "depth", "length"].filter(axis => Number(result[axis]) > 0).length;
+    if (foundUnheaded < 2) return null;
+    result.source = "dom:unheaded-product-dimension-rows";
+    result.raw = [
+      result.width ? `Š ${result.width} cm` : "",
+      result.depth ? `H ${result.depth} cm` : "",
+      result.height ? `V ${result.height} cm` : "",
+      result.length ? `D ${result.length} cm` : ""
+    ].filter(Boolean).join(" × ");
+    return result;
+  }
+  let pendingAxis = null;
+  const axisNames = [
+    ["width", /^(?:sirka|width|breite|largeur|larghezza|ancho|szerokosc)$/],
+    ["depth", /^(?:hlbka|depth|tiefe|profondeur|profondita|glebokosc)$/],
+    ["height", /^(?:vyska|height|hoehe|hauteur|altezza|altura|wysokosc)$/],
+    ["length", /^(?:dlzka|length|laenge|longueur|lunghezza|dlugosc)$/]
+  ];
+  for (let index = start + 1; index < blocks.length; index++) {
+    const block = blocks[index];
+    const text = String(block.text || "").trim();
+    const normalized = normalize(text);
+    if (!normalized) continue;
+    if (/^h[1-6]$/.test(block.tag) && !/^(?:rozmery|dimensions|measurements|product dimensions)$/i.test(normalized)) break;
+    if (/^(?:balenie|balenia|packages?|packaging)$/i.test(normalized)) break;
+    const directAxisLine = parsePhysicalAxisLine(text);
+    if (directAxisLine) {
+      result[directAxisLine.axis] = directAxisLine.value;
+      pendingAxis = null;
+      continue;
+    }
+    const matchedAxis = axisNames.find(([, pattern]) => pattern.test(normalized));
+    if (matchedAxis) {
+      const line = parsePhysicalAxisLine(text);
+      if (line) {
+        result[line.axis] = line.value;
+        pendingAxis = null;
+        continue;
+      }
+      pendingAxis = matchedAxis[0];
+      continue;
+    }
+    if (pendingAxis) {
+      const measurement = parsePhysicalMeasurement(text, "cm", "dimension");
+      if (measurement) {
+        result[pendingAxis] = measurement.value;
+        pendingAxis = null;
+        continue;
+      }
+      pendingAxis = null;
+    }
+    const tuple = parseDimensionTuple(text, "Rozmery produktu", "cm", "dom:dimensions-section");
+    if (tuple) {
+      for (const axis of ["width", "height", "depth", "length"]) if (Number(tuple[axis]) > 0) result[axis] = tuple[axis];
+    }
+  }
+  const found = ["width", "height", "depth", "length"].some(axis => Number(result[axis]) > 0);
+  if (!found) return null;
+  result.raw = [
+    result.width ? `Š ${result.width} cm` : "",
+    result.depth ? `H ${result.depth} cm` : "",
+    result.height ? `V ${result.height} cm` : "",
+    result.length ? `D ${result.length} cm` : ""
+  ].filter(Boolean).join(" × ");
+  return result;
+}
+
+function physicalUnitFromLabel(label) {
+  const match = String(label || "").match(/\b(mm|cm|m|inches?|inch|ft|kg|g|mg|lb|l|ml)\b/i);
+  return match ? match[1] : "";
+}
+
+function emptyPhysicalDimensions() {
+  return { width: null, height: null, depth: null, length: null, diameter: null, thickness: null, unit: "cm", raw: null, source: null };
+}
+
+function parseDimensionTuple(value, label = "", unitHint = "", source = "") {
+  if (value == null) return null;
+  const raw = cleanText(String(value), 180).replace(/\u00a0/g, " ");
+  const matches = [...raw.matchAll(/(\d+(?:[.,]\d+)?)\s*(mm|cm|m|inches?|inch|in|ft|feet|\")?/gi)];
+  if (matches.length < 2 || matches.length > 6) return null;
+  for (let i = 1; i < matches.length; i++) {
+    const separator = raw.slice(matches[i - 1].index + matches[i - 1][0].length, matches[i].index);
+    if (!/^[\s×xX*]+$/.test(separator)) return null;
+  }
+  const lastUnit = [...matches].reverse().find(item => item[2])?.[2] || unitHint || physicalUnitFromLabel(label);
+  if (!lastUnit) return null;
+  const parsed = matches.map(item => parsePhysicalMeasurement(`${item[1]} ${item[2] || lastUnit}`, "", "dimension"));
+  if (parsed.some(item => !item)) return null;
+
+  const result = emptyPhysicalDimensions();
+  result.raw = raw;
+  result.source = source || "dimensions-text";
+  const normalizedLabel = normalizePhysicalLabel(label);
+  const bracket = String(label || "").match(/[([]([^()[\]]{2,60}[x×][^()[\]]{2,60})[)\]]/);
+  const orderText = normalizePhysicalLabel(bracket?.[1] || label);
+  const axisAliases = [
+    ["width", /^(?:width|w|s|sirka|szerokosc|breite|breite|largeur|larghezza|ancho)$/],
+    ["height", /^(?:height|v|vyska|vysoka|wysokosc|hoehe|hauteur|altezza|altura)$/],
+    ["depth", /^(?:depth|d|h|hlbka|hloubka|glebokosc|tiefe|profondeur|profondita|profundidad)$/],
+    ["length", /^(?:length|l|dlzka|dlugosc|laenge|longueur|lunghezza|largo)$/]
+  ];
+  const parts = orderText.split(/[x×]/).map(part => part.replace(/[^a-z]/g, "").trim()).filter(Boolean);
+  const order = parts.map(part => axisAliases.find(([, pattern]) => pattern.test(part))?.[0] || null);
+  if (order.length === parsed.length && order.every(Boolean) && new Set(order).size === order.length) {
+    parsed.forEach((item, index) => { result[order[index]] = item.value; });
+  }
+  result.unit = "cm";
+  return result;
+}
+
+function hasPhysicalDimensionData(value) {
+  return Boolean(value && (value.raw || PHYSICAL_DIMENSION_AXES.some(axis => Number(value[axis]) > 0)));
+}
+
+function mergePhysicalDimensionInfo(primary, fallback) {
+  if (!hasPhysicalDimensionData(primary)) return hasPhysicalDimensionData(fallback) ? { ...fallback } : null;
+  const merged = { ...fallback, ...primary };
+  for (const axis of PHYSICAL_DIMENSION_AXES) {
+    if (!(Number(merged[axis]) > 0)) merged[axis] = Number(fallback?.[axis]) > 0 ? Number(fallback[axis]) : null;
+  }
+  merged.raw = primary.raw || fallback?.raw || null;
+  merged.source = primary.source || fallback?.source || null;
+  merged.unit = "cm";
+  return merged;
+}
+
+function mergePhysicalSpecFields(primary = {}, fallback = {}) {
+  const merged = {};
+  for (const key of ["productDimensions", "shippingDimensions"]) {
+    const value = mergePhysicalDimensionInfo(primary?.[key], fallback?.[key]);
+    if (value) merged[key] = value;
+  }
+  for (const prefix of ["productWeight", "shippingWeight", "productVolume", "shippingVolume"]) {
+    const unitKey = `${prefix}Unit`;
+    const sourceKey = `${prefix}Source`;
+    const primaryValue = Number(primary?.[prefix]);
+    const fallbackValue = Number(fallback?.[prefix]);
+    const primarySource = String(primary?.[sourceKey] || "").toLowerCase();
+    const fallbackSource = String(fallback?.[sourceKey] || "").toLowerCase();
+    const primaryIsGenericWeight = prefix === "shippingWeight" && /json:weight-assumed-packed|json:weight$/.test(primarySource);
+    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty/.test(fallbackSource);
+    const preferFallback = fallbackValue > 0 && fallbackIsExplicit && (primaryValue <= 0 || primaryIsGenericWeight);
+    const value = preferFallback ? fallbackValue : primaryValue > 0 ? primaryValue : fallbackValue > 0 ? fallbackValue : null;
+    if (value != null) {
+      merged[prefix] = value;
+      merged[unitKey] = (preferFallback ? fallback?.[unitKey] : primary?.[unitKey]) || primary?.[unitKey] || fallback?.[unitKey] || (prefix.endsWith("Volume") ? "l" : "kg");
+      merged[sourceKey] = (preferFallback ? fallback?.[sourceKey] : primary?.[sourceKey]) || primary?.[sourceKey] || fallback?.[sourceKey] || null;
+    }
+  }
+  return merged;
+}
+
+function applyPhysicalSpecPair(output, label, value, source = "dom:specification") {
+  const labelText = cleanText(String(label || ""), 120);
+  const structuredValue = value && typeof value === "object" ? value : null;
+  const rawValue = structuredValue
+    ? structuredValue.value ?? structuredValue.valueText ?? structuredValue.amount ?? structuredValue.quantityValue ?? structuredValue.text ?? structuredValue.name
+    : value;
+  const valueText = cleanText(String(rawValue ?? ""), 240);
+  if (!labelText || !valueText) return;
+  const normalized = normalizePhysicalLabel(labelText);
+  const labelledMaximumPackageWeight = /(?:^|\b)(?:hmotnost|vaha|weight)\s+(?:do|max(?:imum)?|up\s+to|bis\s+zu)\b/.test(normalized);
+  const shipping = labelledMaximumPackageWeight || /shipping|package|packaging|carton|box|preprav|balen|gross|brutto|logistic|logistika|karton|opak|wysylk|versand|verpack|emballage|expedition|envio|envase/.test(normalized);
+  const unitHint = physicalUnitFromLabel(labelText) || (structuredValue?.unitText || structuredValue?.unitCode || structuredValue?.unit || "");
+  const dimensionKey = shipping ? "shippingDimensions" : "productDimensions";
+  const axisPatterns = [
+    ["width", /(?:^|\b)(?:sirka|szerokosc|width|breite|largeur|larghezza|ancho)(?:\b|$)/],
+    ["height", /(?:^|\b)(?:vyska|wysokosc|height|hoehe|hauteur|altezza|altura)(?:\b|$)/],
+    ["depth", /(?:^|\b)(?:hlbka|hloubka|glebokosc|depth|tiefe|profondeur|profondita|profundidad)(?:\b|$)/],
+    ["length", /(?:^|\b)(?:dlzka|dlugosc|length|laenge|longueur|lunghezza|largo)(?:\b|$)/],
+    ["diameter", /(?:^|\b)(?:priemer|diameter|durchmesser)(?:\b|$)/],
+    ["thickness", /(?:^|\b)(?:hrubka|thickness|staerke)(?:\b|$)/]
+  ];
+  if (/(?:rozmer(?:y|u|ov)?|rozmiar|wymiar|dimension|abmess|masse|product size|velkost produktu)/.test(normalized)) {
+    const tuple = parseDimensionTuple(valueText, labelText, unitHint, source);
+    if (tuple) output[dimensionKey] = mergePhysicalDimensionInfo(tuple, output[dimensionKey]);
+  }
+  for (const [axis, pattern] of axisPatterns) {
+    if (!pattern.test(normalized)) continue;
+    const measurement = parsePhysicalMeasurement(valueText, unitHint, "dimension");
+    if (!measurement) continue;
+    const current = output[dimensionKey] || emptyPhysicalDimensions();
+    current[axis] = measurement.value;
+    current.unit = "cm";
+    current.source = source;
+    current.raw = current.raw || null;
+    output[dimensionKey] = current;
+  }
+
+  if (/(?:hmotnost|vaha|weight|massa|gewicht|waga|poids|peso)/.test(normalized)) {
+    const measurement = parsePhysicalMeasurement(valueText, unitHint, "weight");
+    if (measurement) {
+      const prefix = shipping ? "shippingWeight" : "productWeight";
+      output[prefix] = measurement.value;
+      output[`${prefix}Unit`] = "kg";
+      output[`${prefix}Source`] = source;
+    }
+  }
+  if (/(?:objem|objetosc|volume|volumen|kapacita|capacity|capacidad|capacite)/.test(normalized)) {
+    const measurement = parsePhysicalMeasurement(valueText, unitHint, "volume");
+    if (measurement) {
+      const prefix = shipping ? "shippingVolume" : "productVolume";
+      output[prefix] = measurement.value;
+      output[`${prefix}Unit`] = "l";
+      output[`${prefix}Source`] = source;
+    }
+  }
+}
+
+function extractPhysicalSpecsFromStructured(...objects) {
+  const output = {};
+  const addDimensionObject = (object, targetKey, sourceName) => {
+    if (!object || typeof object !== "object") return;
+    const dimensions = emptyPhysicalDimensions();
+    const rawUnit = object.unitText || object.unitCode || object.unit || object.measurementUnit || object.unitOfMeasure || "";
+    for (const axis of PHYSICAL_DIMENSION_AXES) {
+      const raw = object[axis] ?? object[`${axis}Value`] ?? object[`${axis}_value`];
+      if (raw == null) continue;
+      const measurement = parsePhysicalMeasurement(raw, rawUnit || object[`${axis}Unit`] || object[`${axis}_unit`], "dimension");
+      if (measurement) dimensions[axis] = measurement.value;
+    }
+    const hasAxes = PHYSICAL_DIMENSION_AXES.some(axis => Number(dimensions[axis]) > 0);
+    if (hasAxes) {
+      dimensions.raw = object.description || null;
+      dimensions.source = sourceName;
+      output[targetKey] = mergePhysicalDimensionInfo(dimensions, output[targetKey]);
+    }
+  };
+
+  for (const object of objects) {
+    if (!object || typeof object !== "object") continue;
+    const directDimensions = object.dimensions ?? object.productDimensions ?? object.product_dimensions ?? null;
+    if (typeof directDimensions === "string") {
+      const parsed = parseDimensionTuple(directDimensions, "Rozmery produktu", object.dimensionUnit || object.unitText || "", "json:dimensions");
+      if (parsed) output.productDimensions = mergePhysicalDimensionInfo(parsed, output.productDimensions);
+    } else if (directDimensions && typeof directDimensions === "object") {
+      addDimensionObject(directDimensions, "productDimensions", "json:dimensions");
+      if (!output.productDimensions?.raw && directDimensions.raw) output.productDimensions.raw = cleanText(directDimensions.raw, 180);
+    }
+    const shippingDimensions = object.shippingDimensions ?? object.packageDimensions ?? object.shipping_dimensions ?? object.package_dimensions ?? null;
+    if (typeof shippingDimensions === "string") {
+      const parsed = parseDimensionTuple(shippingDimensions, "Rozmery balenia", object.dimensionUnit || "", "json:shipping-dimensions");
+      if (parsed) output.shippingDimensions = mergePhysicalDimensionInfo(parsed, output.shippingDimensions);
+    } else if (shippingDimensions && typeof shippingDimensions === "object") {
+      addDimensionObject(shippingDimensions, "shippingDimensions", "json:shipping-dimensions");
+    }
+    addDimensionObject(object, "productDimensions", "json:product-dimensions");
+    const shippingAxisObject = {};
+    for (const axis of PHYSICAL_DIMENSION_AXES) {
+      const raw = object[`shipping${axis[0].toUpperCase()}${axis.slice(1)}`] ?? object[`package${axis[0].toUpperCase()}${axis.slice(1)}`];
+      if (raw != null) shippingAxisObject[axis] = raw;
+    }
+    if (Object.keys(shippingAxisObject).length) {
+      shippingAxisObject.unitText = object.shippingDimensionUnit || object.packageDimensionUnit || object.dimensionUnit || "";
+      addDimensionObject(shippingAxisObject, "shippingDimensions", "json:shipping-dimensions");
+    }
+
+    const productWeightRaw = object.productWeight ?? object.product_weight ?? object.netWeight ?? object.net_weight ?? null;
+    if (productWeightRaw != null) {
+      const measurement = parsePhysicalMeasurement(productWeightRaw, object.productWeightUnit || object.netWeightUnit || object.weightUnit || object.weight_unit || object.unitText || "", "weight");
+      if (measurement) {
+        output.productWeight = measurement.value;
+        output.productWeightUnit = "kg";
+        output.productWeightSource = object.netWeight != null || object.net_weight != null ? "json:netWeight" : "json:productWeight";
+      }
+    }
+    // Generic Schema.org `weight` is often the packed/gross shipping weight in
+    // shop feeds. Never label it as net product weight without an explicit field.
+    const shippingWeightRaw = object.shippingWeight ?? object.packageWeight ?? object.grossWeight ?? object.shipping_weight ?? object.weight ?? null;
+    if (shippingWeightRaw != null) {
+      const measurement = parsePhysicalMeasurement(shippingWeightRaw, object.shippingWeightUnit || object.packageWeightUnit || object.grossWeightUnit || object.weightUnit || object.weight_unit || object.unitText || "", "weight");
+      if (measurement) {
+        output.shippingWeight = measurement.value;
+        output.shippingWeightUnit = "kg";
+        output.shippingWeightSource = object.grossWeight != null ? "json:grossWeight" : object.weight != null ? "json:weight-assumed-packed" : "json:shippingWeight";
+      }
+    }
+    const volumeRaw = object.volume ?? object.productVolume ?? object.fluidVolume ?? null;
+    if (volumeRaw != null) {
+      const measurement = parsePhysicalMeasurement(volumeRaw, object.volumeUnit || object.unitText || "", "volume");
+      if (measurement) {
+        output.productVolume = measurement.value;
+        output.productVolumeUnit = "l";
+        output.productVolumeSource = "json:volume";
+      }
+    }
+    const properties = Array.isArray(object.additionalProperty) ? object.additionalProperty :
+      Array.isArray(object.additionalProperties) ? object.additionalProperties :
+      Array.isArray(object.specifications) ? object.specifications : [];
+    const hasExplicitGrossPackageWeight = properties.some(property => {
+      const label = normalizePhysicalLabel(property?.name || property?.propertyID || property?.label || property?.key || "");
+      return /(?:brutto|gross|shipping|package|packaging|preprav|balen|versand|verpack)/.test(label) && /(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)/.test(label);
+    });
+    for (const property of properties.slice(0, 100)) {
+      if (!property || typeof property !== "object") continue;
+      let label = property.name || property.propertyID || property.label || property.key || "";
+      const normalizedLabel = normalizePhysicalLabel(label);
+      const genericDimensionLabel = /^(?:dlzka|sirka|vyska|hlbka|hloubka|length|width|height|depth|breite|hoehe|tiefe|largeur|hauteur|longueur)$/.test(normalizedLabel);
+      // GymBeam and several other shops publish Length/Width/Height alongside
+      // a Brutto/Gross weight in the same logistics specification set.
+      // In that explicit context those axes describe the packed item, not the
+      // unpacked product itself.
+      if (hasExplicitGrossPackageWeight && genericDimensionLabel) label = `Shipping ${label}`;
+      const value = property.value ?? property.valueText ?? property.valueReference ?? "";
+      const unit = property.unitText || property.unitCode || property.unit || "";
+      if (label && value != null) applyPhysicalSpecPair(output, label, typeof value === "object" ? { ...value, unitText: value.unitText || unit } : `${value}${unit ? ` ${unit}` : ""}`, "json:additionalProperty");
+    }
+  }
+  return output;
+}
+
+function extractPhysicalSpecsFromDom($, container) {
+  if (!container || !container.length) return {};
+  const output = {};
+  const readText = node => cleanText($(node).text() || $(node).attr("content") || $(node).attr("value") || "", 300);
+
+  const isShippingContext = node => {
+    let current = $(node);
+    for (let depth = 0; current && current.length && depth < 9; depth++, current = current.parent()) {
+      const element = current.get(0);
+      const marker = [
+        current.attr("class"), current.attr("id"), current.attr("data-testid"),
+        current.attr("aria-label"), current.attr("itemtype")
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (/(?:logistic|logistika|shipping|delivery|transport|package|packaging|parcel|preprav|balen|versand|verpack|envio)/i.test(marker)) return true;
+
+      const tag = String(element?.tagName || "").toLowerCase();
+      if (["section", "article", "table", "dl", "fieldset", "div", "ul", "ol", "li"].includes(tag)) {
+        const headingText = current.find("h1, h2, h3, h4, caption, legend, .title, .label").slice(0, 8)
+          .map((_, item) => $(item).text()).get().join(" ");
+        if (/(?:logistic|logistika|shipping|delivery|transport|package|packaging|parcel|preprav|balen|versand|verpack|envio)/i.test(headingText)) return true;
+        const localText = normalizeWhitespace(current.text()).slice(0, 2200);
+        const normalizedLocalText = normalizePhysicalLabel(localText);
+        if (localText.length < 2200 && /(?:^|\b)(?:logistics|logistika|shipping information|package information|prepravne udaje|udaje o baleni)(?:\b|$)/i.test(normalizedLocalText)) return true;
+        // Product-level packaging breakdowns are frequently nested in list
+        // structures without any CSS class or visible "Shipping" heading.
+        // Treat generic weight/dimension rows inside that bounded subtree as
+        // parcel data; explicit net/product labels remain product attributes.
+        if (/(?:tento vyrobok|this product|product|dieses produkt|ce produit).{0,90}(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(normalizedLocalText)) return true;
+      }
+      if (["main", "body", "html"].includes(tag)) break;
+    }
+    return false;
+  };
+
+  const addPair = (label, value, source, shippingContext = false) => {
+    const safeLabel = shippingContext && !/(?:product|produktu|netto|net weight)/i.test(String(label || ""))
+      ? `Shipping ${label}` : label;
+    applyPhysicalSpecPair(output, safeLabel, value, source);
+  };
+
+  container.find("tr").slice(0, 700).each((_, row) => {
+    const cells = $(row).find("th, td").toArray();
+    if (cells.length < 2) return;
+    const label = readText(cells[0]);
+    const value = readText(cells[1]);
+    if (label && value) addPair(label, value, "dom:table-row", isShippingContext(row));
+  });
+
+  container.find("dl").slice(0, 120).each((_, list) => {
+    const shippingContext = isShippingContext(list);
+    $(list).children("dt").each((_, dt) => {
+      const label = readText(dt);
+      const value = readText($(dt).next("dd").first());
+      if (label && value) addPair(label, value, "dom:definition-list", shippingContext || isShippingContext(dt));
+    });
+  });
+
+  container.find("li, .product-attribute, [class*='specification-row'], [class*='attribute-row'], [class*='spec-row']").slice(0, 1000).each((_, element) => {
+    const text = readText(element);
+    const match = text.match(/^\s*([^:：]{2,70})\s*[:：]\s*(.{1,180})$/);
+    if (match) addPair(match[1], match[2], "dom:labelled-specification", isShippingContext(element));
+  });
+
+  const fullText = container.text().replace(/\u00a0/g, " ").replace(/[\t\r]+/g, " ").replace(/\s+/g, " ");
+  const combinedPatterns = [
+    [/(?:rozmery\s+balenia|package\s+dimensions|shipping\s+dimensions|carton\s+dimensions|rozmery\s+prepravneho\s+obalu|wymiary\s+opakowania|rozmiar\s+opakowania|packmasse|verpackungsmass)\s*[:：-]\s*([^|;]{3,100})/gi, "Rozmery balenia"],
+    [/(?:rozmery\s+produktu|product\s+dimensions|rozmery\s+produktu)\s*[:：-]\s*([^|;]{3,100})/gi, "Rozmery produktu"]
+  ];
+  for (const [pattern, label] of combinedPatterns) {
+    let match;
+    while ((match = pattern.exec(fullText)) !== null) addPair(label, match[1], "dom:labelled-dimensions");
+  }
+
+  // Full-text fallback accepts only explicit weight labels. Generic words such
+  // as "weight" or "hmotnosť" are intentionally excluded: they may describe
+  // nutrition values or logistics and must not be guessed as net product mass.
+  const weightPattern = /(?:netto\s*(?:hmotnosť|váha|weight)|net\s+weight|product\s+weight|hmotnosť\s+produktu|hmotnost\s+produktu|shipping\s+weight|package\s+weight|gross\s+weight|brutto\s*(?:weight|hmotnosť|hmotnost|váha|vaha)|hmotnosť\s+balenia|hmotnost\s+balenia|váha\s+balenia|vaha\s+balenia|waga\s+produktu|waga\s+opakowania|poids\s+du\s+produit|peso\s+del\s+producto)\s*(?:\((kg|g|mg|lb)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?\s*(?:kg|g|mg|lb)?)/gi;
+  let weightMatch;
+  while ((weightMatch = weightPattern.exec(fullText)) !== null) {
+    const label = /shipping|package|gross|brutto|balen|preprav|opak|wysylk|versand|verpack|emballage|expedition|envio/i.test(weightMatch[0]) ? "Hmotnosť balenia" : "Hmotnosť produktu";
+    addPair(label + (weightMatch[1] ? ` (${weightMatch[1]})` : ""), weightMatch[2], "dom:labelled-weight");
+  }
+
+  const volumePattern = /(?:objem\s+produktu|objem\s+balenia|objętość\s+produktu|objętość\s+opakowania|volume\s+of\s+product|package\s+volume|shipping\s+volume|product\s+volume|capacity|capacidad|capacité|kapacita)\s*(?:\((l|ml)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?\s*(?:l|ml)?)/gi;
+  let volumeMatch;
+  while ((volumeMatch = volumePattern.exec(fullText)) !== null) {
+    const label = /balen|shipping|package|opak|versand|verpack|emballage|envio/i.test(volumeMatch[0]) ? "Objem balenia" : "Objem produktu";
+    addPair(label + (volumeMatch[1] ? ` (${volumeMatch[1]})` : ""), volumeMatch[2], "dom:labelled-volume");
+  }
+
+  // Some furniture and appliance stores publish the assembled product dimensions
+  // as a heading followed by separate rows (Width / Depth / Height), not as one
+  // labelled tuple. Read those rows independently from the later package section.
+  const semanticBlocks = [];
+  const primarySemanticTags = new Set([
+    "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "dt", "dd",
+    "tr", "legend", "caption", "button", "strong", "b", "small"
+  ]);
+  const normalizedSemanticText = value => normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
+  const isStandalonePhysicalLine = text => {
+    const normalized = normalizedSemanticText(text);
+    if (!normalized || text.length > 160) return false;
+    const isPackageIndex = /^(?:balenie|package|parcel|paket|colis)\s*(?:c\.?\s*)?\d{1,3}$/i.test(normalized);
+    const isPackageHeading = /^(?:balenie|balenia|packages?|packaging|package details|package information|rozmery|rozmery produktu|dimensions|product dimensions)$/i.test(normalized);
+    const isAxis = Boolean(parsePhysicalAxisLine(text));
+    const isWeight = Boolean(parsePackageWeightLine(text));
+    const isComponentGroup = /^(?:\d{1,2})\s*[x×]\s*[\p{L}\p{N}_./-]/u.test(text);
+    const isComponentCode = /^[A-Z0-9]{2,10}(?:[.-][A-Z0-9]{2,10}){1,3}$/i.test(text);
+    const isPackageCount = /^(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,70}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(normalized);
+    const isPackageSectionEnd = /^(?:tento vyrobok sa sklada z viacerych sucasti|tento vyrobok pozostava z tychto casti|this product is made up of several parts|this product consists of multiple parts|parts included|included components|components included|suciast[ií]|components)$/i.test(normalized);
+    return isPackageIndex || isPackageHeading || isAxis || isWeight || isComponentGroup || isComponentCode || isPackageCount || isPackageSectionEnd;
+  };
+
+  // Walk the DOM tree in document order instead of collecting only element
+  // text. IKEA and similar shops place labels such as "Balenie 1", component
+  // SKUs and component names in standalone text nodes between <p>/<ul> nodes.
+  // A CSS selector cannot see those nodes; omitting them loses parcel
+  // boundaries and makes the complete parcel-weight sum impossible.
+  const walkPhysicalDomNode = element => {
+    if (!element) return;
+    const type = String(element.type || "").toLowerCase();
+    if (type === "text" || element.nodeType === 3) {
+      const raw = cleanText(decodeEntities(String(element.data ?? element.nodeValue ?? "")), 160);
+      if (!raw || raw.length > 100) return;
+      // Some templates concatenate a component group with its name, or a SKU
+      // with a parcel marker, in one text node. Split those boundaries while
+      // preserving the original document order.
+      const groupAndName = raw.match(/^(\d{1,2}\s*[x×]\s*[\p{L}\p{N}_./-]+)\s+(.{1,100})$/u);
+      if (groupAndName) {
+        semanticBlocks.push({ tag: "text", text: groupAndName[1] });
+        semanticBlocks.push({ tag: "text", text: groupAndName[2] });
+        return;
+      }
+      // Split parcel markers first. Some IKEA templates concatenate a SKU
+      // directly with the following text node ("705.215.39Balenie 1"). A
+      // generic SKU regex can greedily consume the word "Balenie", so use
+      // the explicit parcel marker as the primary boundary.
+      const packageMarkerPattern = /(?:balenie|package|parcel|paket|colis)\s*(?:c\.?\s*)?\d{1,3}\b/gi;
+      const packageMarkers = [...raw.matchAll(packageMarkerPattern)];
+      const pushCodeAndText = value => {
+        const valueText = cleanText(value, 100);
+        if (!valueText) return;
+        // Split a component's descriptive name from a SKU even when the
+        // source omits whitespace between them.
+        const codeMatch = valueText.match(/([A-Z0-9]{2,10}(?:[.-][A-Z0-9]{2,10}){1,3})$/i);
+        if (codeMatch && codeMatch.index > 0) {
+          const beforeCode = cleanText(valueText.slice(0, codeMatch.index), 100);
+          if (beforeCode) semanticBlocks.push({ tag: "text", text: beforeCode });
+          semanticBlocks.push({ tag: "text", text: codeMatch[1] });
+        } else {
+          semanticBlocks.push({ tag: "text", text: valueText });
+        }
+      };
+      if (packageMarkers.length) {
+        let cursor = 0;
+        for (const marker of packageMarkers) {
+          pushCodeAndText(raw.slice(cursor, marker.index));
+          semanticBlocks.push({ tag: "text", text: cleanText(marker[0], 100) });
+          cursor = marker.index + marker[0].length;
+        }
+        pushCodeAndText(raw.slice(cursor));
+      } else {
+        pushCodeAndText(raw);
+      }
+      return;
+    }
+    if (type === "comment" || element.nodeType === 8) return;
+
+    const tag = String(element.tagName || element.name || "").toLowerCase();
+    if (["script", "style", "noscript", "svg"].includes(tag)) return;
+    const node = $(element);
+    let text = "";
+    if (tag === "tr") {
+      text = node.find("th,td").toArray().map(cell => readText(cell)).filter(Boolean).join(" ");
+    } else {
+      text = readText(element);
+    }
+    if (!text) return;
+
+    const children = Array.isArray(element.children)
+      ? element.children
+      : Array.isArray(element.childNodes)
+        ? element.childNodes
+        : node.contents().toArray();
+    const hasElementChildren = children.some(child => {
+      const childType = String(child?.type || "").toLowerCase();
+      return childType !== "text" && child?.nodeType !== 3 && childType !== "comment" && child?.nodeType !== 8;
+    });
+    const normalized = normalizedSemanticText(text);
+    const isPackageIndex = /^(?:balenie|package|parcel|paket|colis)\s*(?:c\.?\s*)?\d{1,3}$/i.test(normalized);
+    const isPackageHeading = /^(?:balenie|balenia|packages?|packaging|package details|package information|rozmery|rozmery produktu|dimensions|product dimensions)$/i.test(normalized);
+    const isAxisOrWeight = Boolean(parsePhysicalAxisLine(text) || parsePackageWeightLine(text));
+    const isPackageCount = /^(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,70}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(normalized);
+    const isPackageSectionEnd = /^(?:tento vyrobok sa sklada z viacerych sucasti|tento vyrobok pozostava z tychto casti|this product is made up of several parts|this product consists of multiple parts|parts included|included components|components included|suciast[ií]|components)$/i.test(normalized);
+    const isComponentMarker = isStandalonePhysicalLine(text) && /^(?:\d{1,2}\s*[x×]|[A-Z0-9]{2,10}(?:[.-][A-Z0-9]{2,10}){1,3})/i.test(text);
+
+    // Measurement rows can be emitted as a whole even when their value is
+    // split across nested spans. Component markers, however, must be descended
+    // into when they share an element with the component description.
+    if ((isAxisOrWeight && !hasElementChildren) || isPackageIndex || isPackageHeading || (isPackageCount && !hasElementChildren) || isPackageSectionEnd || (isComponentMarker && !hasElementChildren)) {
+      semanticBlocks.push({ tag, text });
+      return;
+    }
+
+    // Preserve short semantic leaf rows (for example a component name), but
+    // recurse through wrapper elements so direct text nodes keep their order.
+    if (primarySemanticTags.has(tag) && !hasElementChildren && text.length <= 100) {
+      semanticBlocks.push({ tag, text });
+      return;
+    }
+
+    if (children.length) {
+      for (const child of children) walkPhysicalDomNode(child);
+    } else if (text.length <= 100) {
+      semanticBlocks.push({ tag, text });
+    }
+  };
+
+  const rootNode = container.get(0);
+  if (rootNode) walkPhysicalDomNode(rootNode);
+  const sectionDimensions = extractProductDimensionsFromBlocks(semanticBlocks);
+  if (sectionDimensions) output.productDimensions = mergePhysicalDimensionInfo(sectionDimensions, output.productDimensions);
+
+  // If the store puts the assembled dimensions directly in the product title
+  // (e.g. "200x66x201 cm") but does not expose a separate dimensions block,
+  // preserve that explicit source text as a lower-confidence product dimension.
+  if (!hasPhysicalDimensionData(output.productDimensions)) {
+    const titleText = cleanText(getPrimaryProductTitleNode($).text() || container.find("h1").first().text() || "", 300);
+    const titleDimensions = extractDimensionVariant(titleText);
+    if (titleDimensions && titleDimensions.values.length === 3) {
+      output.productDimensions = {
+        ...titleDimensions.dimensions,
+        source: "dom:product-title-dimension"
+      };
+    }
+  }
+
+  // A product may contain several shipping cartons. Preserve every component
+  // and parcel as a structured array; do not let the final accessory row replace
+  // the wardrobe's first/large parcel dimensions.
+  const packageBreakdown = parseShippingPackageBlocks(semanticBlocks);
+  if (packageBreakdown.shippingPackages?.length) {
+    output.shippingPackages = packageBreakdown.shippingPackages;
+    output.packageCount = packageBreakdown.packageCount;
+    output.packageCountSource = packageBreakdown.packageCountSource;
+    output.shippingPackageSource = packageBreakdown.shippingPackageSource;
+    if (packageBreakdown.shippingDimensions) output.shippingDimensions = packageBreakdown.shippingDimensions;
+    else { delete output.shippingDimensions; }
+    if (packageBreakdown.shippingWeight != null) {
+      output.shippingWeight = packageBreakdown.shippingWeight;
+      output.shippingWeightUnit = packageBreakdown.shippingWeightUnit;
+      output.shippingWeightQualifier = packageBreakdown.shippingWeightQualifier || "exact";
+      output.shippingWeightSource = packageBreakdown.shippingWeightSource;
+    } else {
+      delete output.shippingWeight;
+      delete output.shippingWeightUnit;
+      delete output.shippingWeightQualifier;
+      delete output.shippingWeightSource;
+    }
+  }
+  return output;
+}
+
 function isNutritionMeasurementControl($, node) {
   // Nutrition-table selectors such as "100 g", "1 odmerka (30 g)" and
   // "Denná dávka (60 g)" are reference bases, not sale-package variants.
@@ -952,10 +1831,8 @@ function extractPackageMeasureFromDom($, container) {
   }
 
   const selectors = [
-    "[itemprop='weight']", "[itemprop='netWeight']", "[itemprop='netContent']",
-    "[data-net-weight]", "[data-package-weight]", "[data-weight]",
-    ".product-weight", ".net-weight", ".package-weight", ".product-card__weight",
-    ".product-detail__weight", ".product-detail-weight"
+    "[itemprop='netWeight']", "[itemprop='netContent']",
+    "[data-net-weight]", ".net-weight", ".net-content", ".product-net-weight"
   ];
   for (const selector of selectors) {
     const node = container.find(selector).first();
@@ -1020,7 +1897,7 @@ function extractPackageMeasureFromDom($, container) {
   }
 
   const labelledText = container.text().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
-  const labelMatch = labelledText.match(/(?:netto\s*(?:váha|hmotnosť)|čistá\s+hmotnosť|hmotnosť\s+balenia|obsah\s+balenia|net\s+weight|package\s+weight|net\s+content|veľkosť\s+balenia|kapsuly|počet\s+kapsúl|capsules?)\s*:?\s*([^|;,]{1,60})/i);
+  const labelMatch = labelledText.match(/(?:netto\s*(?:váha|hmotnosť)|čistá\s+hmotnosť|hmotnosť\s+produktu|obsah\s+balenia|net\s+weight|net\s+content|veľkosť\s+balenia|kapsuly|počet\s+kapsúl|capsules?)\s*:?\s*([^|;,]{1,60})/i);
   if (labelMatch) {
     const measure = parseExplicitPackageLabel(labelMatch[1]);
     if (measure) return { ...measure, packageMeasureSource: "dom:labelled-package-measure", packageOptions: publicOptions };
@@ -1236,6 +2113,7 @@ function extractProductFromJsonLd(node, pageUrl) {
     availability: offer.availability,
     unit: offer.unit || null,
     ...extractPackageMeasure(node, offer),
+    ...extractPhysicalSpecsFromStructured(node, offer),
     url: productUrl,
     image,
     ...extractProductIdentifiers(node),
@@ -1292,6 +2170,53 @@ function getJsonLdOfferUnitPrice(offer) {
   return { unitPrice, unitPriceUnit };
 }
 
+function extractPackageMeasureFromImageAssets(...objects) {
+  const found = new Map();
+  for (const object of objects) {
+    if (!object || typeof object !== "object") continue;
+    const rawImages = object.image ?? object.images ?? object.photo ?? object.photos ?? [];
+    const images = Array.isArray(rawImages) ? rawImages : [rawImages];
+    for (const image of images.slice(0, 40)) {
+      const candidates = typeof image === "string"
+        ? [image]
+        : image && typeof image === "object"
+          ? [image.url, image.contentUrl, image.name, image.caption, image.alt, image.description].filter(Boolean)
+          : [];
+      for (const candidate of candidates) {
+        const text = decodeEntities(String(candidate)).replace(/%20/gi, " ");
+        // Only accept explicit quantities embedded in a product image's own
+        // filename/alt text. Do not infer anything from image dimensions.
+        const matches = [...text.matchAll(/(?:^|[^a-z0-9])(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)(?=$|[^a-z])/gi)];
+        for (const match of matches) {
+          let quantity = Number(match[1].replace(",", "."));
+          let unit = String(match[2]).toLowerCase();
+          if (!Number.isFinite(quantity) || quantity <= 0) continue;
+          if (unit === "g" && quantity >= 1000 && quantity % 1000 === 0) {
+            quantity /= 1000;
+            unit = "kg";
+          } else if (unit === "ml" && quantity >= 1000 && quantity % 1000 === 0) {
+            quantity /= 1000;
+            unit = "l";
+          }
+          const key = `${quantity}|${unit}`;
+          found.set(key, { quantity, unit });
+        }
+      }
+    }
+  }
+  // If product imagery advertises conflicting package sizes (e.g. 500 g and
+  // 1 kg variants), do not choose one automatically.
+  if (found.size !== 1) return null;
+  const value = [...found.values()][0];
+  return {
+    packageQuantity: value.quantity,
+    packageUnit: value.unit,
+    packageLabel: `${value.quantity} ${value.unit}`,
+    packageMeasureSource: "json-ld:image-filename",
+    packageMeasureDerived: true
+  };
+}
+
 function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
   const offers = getJsonLdOfferList(node?.offers);
   if (offers.length < 2) return [];
@@ -1315,7 +2240,7 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     const rawSize = offer.size || itemOffered.size || offer.packageSize || itemOffered.packageSize || "";
     const nameSize = offerName.match(/\b\d+(?:[.,]\d+)?\s*(?:kg|g|ml|l|capsules?|kaps(?:ula|uly|ulu|ulov|úl)|tablets?)\b/i)?.[0] || "";
     const sizeText = cleanText(rawSize || nameSize, 100);
-    const packageMeasure = sizeText ? parseExplicitPackageLabel(sizeText) : null;
+    const packageMeasure = (sizeText ? parseExplicitPackageLabel(sizeText) : null) || extractPackageMeasureFromImageAssets(node, itemOffered, offer);
     const color = cleanText(offer.color?.name || offer.color || itemOffered.color?.name || itemOffered.color || "", 120);
     // A variant offer may identify its option only in its own name (e.g.
     // "Protein Latte - GymBeam čokoláda"). Preserve that option explicitly;
@@ -1338,7 +2263,22 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     const imageCandidate = Array.isArray(itemOffered.image) ? itemOffered.image[0] : itemOffered.image;
     const image = typeof imageCandidate === "string" ? imageCandidate : imageCandidate?.url || baseImage;
     const identifiers = extractProductIdentifiers({ ...node, ...itemOffered, ...offer });
+    // Physical metadata is optional enrichment. If a shop exposes malformed or
+    // unusual specification data, it must never discard an otherwise valid
+    // sellable variant offer.
+    let physicalSpecs = {};
+    try {
+      physicalSpecs = extractPhysicalSpecsFromStructured(node, itemOffered, offer);
+    } catch {
+      physicalSpecs = {};
+    }
     const groupId = cleanText(node.productGroupID || node.sku || productUrl, 300);
+    const inferredNetWeight = packageMeasure && ["kg", "g"].includes(packageMeasure.packageUnit)
+      ? (packageMeasure.packageUnit === "g" ? packageMeasure.packageQuantity / 1000 : packageMeasure.packageQuantity)
+      : null;
+    const inferredNetVolume = packageMeasure && ["l", "ml"].includes(packageMeasure.packageUnit)
+      ? (packageMeasure.packageUnit === "ml" ? packageMeasure.packageQuantity / 1000 : packageMeasure.packageQuantity)
+      : null;
 
     records.push({
       name,
@@ -1350,6 +2290,17 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
       unitPriceUnit: unitPriceUnit || null,
       availability: offer.availability || null,
       unit: extractStructuredUnit(offer),
+      ...physicalSpecs,
+      ...(inferredNetWeight != null && !(Number(physicalSpecs.productWeight) > 0) ? {
+        productWeight: inferredNetWeight,
+        productWeightUnit: "kg",
+        productWeightSource: `${packageMeasure.packageMeasureSource || "json-ld:offer-size"}-net-content`
+      } : {}),
+      ...(inferredNetVolume != null && !(Number(physicalSpecs.productVolume) > 0) ? {
+        productVolume: inferredNetVolume,
+        productVolumeUnit: "l",
+        productVolumeSource: `${packageMeasure.packageMeasureSource || "json-ld:offer-size"}-net-content`
+      } : {}),
       ...(packageMeasure ? {
         packageQuantity: packageMeasure.packageQuantity,
         packageUnit: packageMeasure.packageUnit,
@@ -1599,7 +2550,13 @@ function extractMicrodataProducts($, pageUrl) {
     if (brandNode.length) microdataIdentifiers.brand = cleanText(brandNode.attr("content") || brandNode.text(), 160);
 
     products.push({
-      name, price, currency, availability: null, unit, ...packageMeasure, url: productUrl, image,
+      name, price, currency, availability: null, unit, ...packageMeasure, ...extractPhysicalSpecsFromDom($, root), ...extractPhysicalSpecsFromStructured({
+        weight: { value: weightNode.attr("content") || weightNode.text(), unitCode: weightNode.attr("data-unit-code"), unitText: weightNode.attr("data-unit-text") },
+        width: { value: root.find("[itemprop='width']").first().attr("content") || root.find("[itemprop='width']").first().text(), unitCode: root.find("[itemprop='width']").first().attr("unitCode"), unitText: root.find("[itemprop='width']").first().attr("data-unit-text") },
+        height: { value: root.find("[itemprop='height']").first().attr("content") || root.find("[itemprop='height']").first().text(), unitText: root.find("[itemprop='height']").first().attr("data-unit-text") },
+        depth: { value: root.find("[itemprop='depth']").first().attr("content") || root.find("[itemprop='depth']").first().text(), unitText: root.find("[itemprop='depth']").first().attr("data-unit-text") },
+        length: { value: root.find("[itemprop='length']").first().attr("content") || root.find("[itemprop='length']").first().text(), unitText: root.find("[itemprop='length']").first().attr("data-unit-text") }
+      }), url: productUrl, image,
       ...microdataIdentifiers, source: "microdata"
     });
   });
@@ -1818,6 +2775,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
         null,
       unit: extractStructuredUnit(value, defaultPrice),
       ...extractPackageMeasure(value, defaultPrice),
+      ...extractPhysicalSpecsFromStructured(value, defaultPrice),
       url: productUrl,
       image,
       ...extractProductIdentifiers(value),
@@ -1909,6 +2867,7 @@ function extractProductsFromAppData(data, pageUrl) {
     priceType: "bežná predajná cena",
     availability: product.available_in_stock === true || product.is_available === true ? "InStock" : null,
     unit: "neuvedené",
+    ...extractPhysicalSpecsFromStructured(product, priceObject),
     url: productUrl,
     image,
     ...(product.sku || product.product_sku ? { sku: product.sku || product.product_sku } : {}),
@@ -2381,6 +3340,7 @@ function extractLinkedProductCardProducts($, pageUrl, existingProducts = []) {
       availability: /na sklade|skladom|in stock/i.test(best.cardText) ? "InStock" : null,
       unit: extractUnitNearPrice($, best.card, best.parsed.price),
       ...extractPackageMeasureFromDom($, best.card),
+      ...extractPhysicalSpecsFromDom($, best.card),
       url: productUrl.href,
       image: imageUrl,
       ...extractProductIdentifiers({
@@ -3396,7 +4356,7 @@ function deduplicateProducts(products) {
       const existing = result[existingIndex];
       const previousSource = existing.source || "";
       if (sourceRank(product.source) > sourceRank(existing.source)) {
-        const merged = { ...existing, ...product };
+        const merged = { ...existing, ...product, ...mergePhysicalSpecFields(product, existing) };
         if (!product.currency && existing.currency) merged.currency = existing.currency;
         if ((!product.unit || product.unit === "neuvedené") && existing.unit) merged.unit = existing.unit;
         if (!product.image && existing.image) merged.image = existing.image;
@@ -3417,6 +4377,7 @@ function deduplicateProducts(products) {
         merged.source = [previousSource, product.source].filter(Boolean).join("+");
         result[existingIndex] = merged;
       } else {
+        Object.assign(existing, mergePhysicalSpecFields(existing, product));
         if ((!existing.currency || existing.currency === "NEZNAMA") && product.currency) existing.currency = product.currency;
         if ((!existing.unit || existing.unit === "neuvedené") && product.unit && product.unit !== "neuvedené") existing.unit = product.unit;
         if (!existing.image && product.image) existing.image = product.image;
@@ -3426,6 +4387,13 @@ function deduplicateProducts(products) {
         }
         if (Array.isArray(product.packageOptions) && product.packageOptions.length && (!Array.isArray(existing.packageOptions) || !existing.packageOptions.length)) {
           existing.packageOptions = product.packageOptions;
+        }
+        if (Array.isArray(product.shippingPackages) && product.shippingPackages.length && (!Array.isArray(existing.shippingPackages) || !existing.shippingPackages.length)) {
+          existing.shippingPackages = product.shippingPackages;
+          existing.packageCount = product.packageCount ?? existing.packageCount ?? null;
+          existing.packageCountSource = product.packageCountSource || existing.packageCountSource || null;
+          existing.shippingPackageSource = product.shippingPackageSource || existing.shippingPackageSource || null;
+          existing.shippingWeightQualifier = product.shippingWeightQualifier || existing.shippingWeightQualifier || null;
         }
         if (existing.packageMeasureDerived === true && product.packageMeasureDerived !== true && product.packageQuantity != null) {
           existing.packageQuantity = product.packageQuantity;
@@ -3476,6 +4444,7 @@ function extract4homeDetailProduct($, pageUrl) {
     availability: stock || null,
     url: pageUrl,
     image,
+    ...extractPhysicalSpecsFromDom($, $("main").first().length ? $("main").first() : $("body")),
     source: "4home-detail-fast-v333",
     productId: $("[data-product-id]").first().attr("data-product-id") || $("[data-productinfo]").first().attr("data-product-id") || null
   };
@@ -3618,7 +4587,15 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
     // Keep the same return contract as the normal extraction path.
     // extractWebsiteContent() expects { products, diagnostics }; returning a
     // bare array here caused valid JSON-LD variants to disappear in the crawler.
-    const variantProducts = deduplicateProducts(jsonLdVariantSet).slice(0, MAX_PRODUCTS_PER_PAGE);
+    // DOM-only physical specifications must still be read before this fast return.
+    const productArea = $("main").first().length ? $("main").first() : $("body");
+    const pageTitle = cleanProductTitle(getPrimaryProductTitleNode($).text() || $("h1").first().text());
+    const pageText = normalizeWhitespace(productArea.text());
+    const pageSku = pageText.match(/\b(?:[A-Z0-9]{2,10}[.-]){1,3}[A-Z0-9]{2,10}\b/i)?.[0] || null;
+    const pagePhysicalSpecs = extractPhysicalSpecsFromDom($, productArea);
+    const variantProducts = enrichJsonLdVariantsWithPhysicalSpecs(
+      deduplicateProducts(jsonLdVariantSet), pageUrl, pageTitle, pageSku, pagePhysicalSpecs
+    ).slice(0, MAX_PRODUCTS_PER_PAGE);
     return {
       products: variantProducts,
       diagnostics: {
@@ -3726,21 +4703,31 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
   const isSingleProductDetail = !isCategoryPath && getPrimaryProductTitleNode($).length > 0 && products.length > 0 && products.length <= 30 &&
     (cardCount < 2 || detailSignals.isDetail === true || primaryPageProductIndexes.size > 0);
   if (isSingleProductDetail) {
-    const bodyMeasure = extractPackageMeasureFromDom($, $("body"));
-    if (bodyMeasure && (bodyMeasure.packageQuantity != null || Array.isArray(bodyMeasure.packageOptions))) {
+    const productArea = $("main").first().length ? $("main").first() : $("body");
+    const bodyMeasure = extractPackageMeasureFromDom($, productArea);
+    const bodyPhysicalSpecs = extractPhysicalSpecsFromDom($, productArea);
+    if ((bodyMeasure && (bodyMeasure.packageQuantity != null || Array.isArray(bodyMeasure.packageOptions))) || Object.keys(bodyPhysicalSpecs).length) {
       products = products.map((product, index) => {
         // When the page identity is available, update only the matching main
         // product record(s), never unrelated recommendations on the page.
         if (primaryPageProductIndexes.size > 0 && !primaryPageProductIndexes.has(index)) return product;
         return {
           ...product,
-          ...(bodyMeasure.packageQuantity != null ? {
+          ...mergePhysicalSpecFields(product, bodyPhysicalSpecs),
+          ...(bodyMeasure?.packageQuantity != null ? {
             packageQuantity: bodyMeasure.packageQuantity,
             packageUnit: bodyMeasure.packageUnit,
             packageLabel: bodyMeasure.packageLabel || `${bodyMeasure.packageQuantity} ${bodyMeasure.packageUnit}`,
             packageMeasureSource: bodyMeasure.packageMeasureSource
           } : {}),
-          ...(bodyMeasure.packageOptions?.length ? { packageOptions: bodyMeasure.packageOptions } : {})
+          ...(bodyMeasure?.packageOptions?.length ? { packageOptions: bodyMeasure.packageOptions } : {}),
+          ...(Array.isArray(bodyPhysicalSpecs.shippingPackages) && bodyPhysicalSpecs.shippingPackages.length ? {
+            shippingPackages: bodyPhysicalSpecs.shippingPackages,
+            packageCount: bodyPhysicalSpecs.packageCount ?? product.packageCount ?? null,
+            packageCountSource: bodyPhysicalSpecs.packageCountSource || null,
+            shippingPackageSource: bodyPhysicalSpecs.shippingPackageSource || null,
+            shippingWeightQualifier: bodyPhysicalSpecs.shippingWeightQualifier || product.shippingWeightQualifier || null
+          } : {})
         };
       });
     }
@@ -3819,64 +4806,98 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
 
 // Finds size-option links only inside a clearly labelled size-variant
 // selector. This avoids merging colour siblings, recommendations or models.
+function collectSizeVariantAnchorCandidates($, scope, pageUrl) {
+  const candidates = [];
+  scope.find("a[href]").each((_, anchorNode) => {
+    const anchor = $(anchorNode);
+    const href = String(anchor.attr("href") || "").trim();
+    if (!href || href.startsWith("#") || /^javascript:/i.test(href)) return;
+    let parsed;
+    try { parsed = new URL(href, pageUrl); } catch { return; }
+    let origin;
+    try { origin = new URL(pageUrl).origin; } catch { return; }
+    if (parsed.origin !== origin || /\.(?:jpg|jpeg|png|gif|webp|svg|pdf|zip)$/i.test(parsed.pathname)) return;
+    let pathname = parsed.pathname;
+    try { pathname = decodeURIComponent(pathname); } catch {}
+    const label = cleanText([
+      anchor.attr("title"), anchor.attr("aria-label"), anchor.attr("data-size"),
+      anchor.attr("data-dimension"), anchor.attr("data-variant"), anchor.attr("data-value"),
+      anchor.text(), anchor.find("img").first().attr("alt")
+    ].filter(Boolean).join(" "), 240);
+    const sizeInfo = extractDimensionVariant(`${label} ${pathname} ${href}`);
+    if (!sizeInfo) return;
+    parsed.hash = "";
+    candidates.push({ url: parsed.href, size: sizeInfo.size, dimensions: sizeInfo.dimensions, label: label || sizeInfo.size });
+  });
+  return candidates;
+}
+
+function addCurrentProductSizeOption(options, pageUrl, currentTitle) {
+  const sizeInfo = extractDimensionVariant(currentTitle);
+  if (!sizeInfo) return options;
+  let current;
+  try { current = new URL(pageUrl); } catch { return options; }
+  const normalized = normalizeProductUrl(current.href);
+  if (!options.some(option => normalizeProductUrl(option.url) === normalized)) {
+    options.push({ url: current.href, size: sizeInfo.size, dimensions: sizeInfo.dimensions, label: cleanText(currentTitle, 180), selected: true });
+  }
+  return options;
+}
+
+// Generic multilingual size/measurement selector discovery. Crucially, it adds
+// the currently-open product URL as an option when the page shows its own size
+// but only links the other sizes. This is common on IKEA-style product pages.
 function extractSizeVariantLinks($, pageUrl) {
   let origin;
   try { origin = new URL(pageUrl).origin; } catch { return []; }
-  const markerPattern = /(?:veľkostn[eé]\s+varianty|velkostn[eé]\s+varianty|size\s+variants|choose\s+(?:a\s+)?size|select\s+(?:a\s+)?size)/i;
-  const sizePattern = /(\d{2,3})\s*(?:[-–]\s*)?[x×]\s*(?:[-–]\s*)?(\d{2,3})(?:\s*\+\s*(\d{1,3}))?\s*(?:cm)?/i;
+  const currentTitle = cleanText(
+    getPrimaryProductTitleNode($).text() ||
+    $("h1").first().text() ||
+    $("meta[property='og:title']").attr("content") ||
+    $("title").first().text(),
+    300
+  );
   const results = new Map();
+  const addAll = options => {
+    for (const option of options) {
+      const key = normalizeProductUrl(option.url);
+      if (key && !results.has(key)) results.set(key, option);
+    }
+  };
 
-  // 4home's current explicit size selector. Its anchor labels are the
-  // authoritative sizes (some legacy href slugs contain a typo).
-  $(".size-selector a[href], .size-variant a[href], #size-variant-blurable a[href]").each((_, anchorNode) => {
-    const anchor = $(anchorNode);
-    let parsed;
-    try { parsed = new URL(anchor.attr("href"), pageUrl); } catch { return; }
-    if (parsed.origin !== origin) return;
-    const label = cleanText(anchor.attr("title") || anchor.attr("aria-label") || anchor.text() || anchor.find("img").first().attr("alt"), 180);
-    const dimensionMatch = label.match(sizePattern) || decodeURIComponent(parsed.pathname).match(sizePattern);
-    if (!dimensionMatch) return;
-    parsed.hash = "";
-    const size = `${dimensionMatch[1]} x ${dimensionMatch[2]}${dimensionMatch[3] ? ` + ${dimensionMatch[3]}` : ""} cm`;
-    results.set(normalizeProductUrl(parsed.href), { url: parsed.href, size, label: label || size });
+  // Known semantic class selectors across common storefront templates.
+  const explicitScopes = $(".size-selector, .size-variant, #size-variant-blurable, [class*='size-selector' i], [class*='dimension-selector' i], [data-testid*='size-selector' i], [data-testid*='dimension-selector' i]");
+  explicitScopes.each((_, element) => {
+    const scope = $(element);
+    const options = collectSizeVariantAnchorCandidates($, scope, pageUrl);
+    addCurrentProductSizeOption(options, pageUrl, currentTitle);
+    if (options.length >= 2) addAll(options);
   });
   if (results.size >= 2) return [...results.values()];
 
-  $("p,div,span,h2,h3,h4,strong,b,legend,label").each((_, markerNode) => {
+  const markerSelector = "p,div,span,h2,h3,h4,strong,b,legend,label,button,[role='heading']";
+  $(markerSelector).each((_, markerNode) => {
     const marker = $(markerNode);
-    const markerText = cleanText(marker.text(), 140);
-    if (!markerPattern.test(markerText)) return;
+    const markerText = cleanText(marker.text(), 180);
+    if (!isExplicitSizeVariantMarker(markerText)) return;
 
     let scope = marker;
     for (let depth = 0; depth < 5 && scope.length; depth++) {
       scope = scope.parent();
       if (!scope.length) break;
-      const scopeText = cleanText(scope.text(), 2600);
-      if (scopeText.length > 2600) continue;
-
-      const options = [];
-      scope.find("a[href]").each((__, anchorNode) => {
-        const anchor = $(anchorNode);
-        let parsed;
-        try { parsed = new URL(anchor.attr("href"), pageUrl); } catch { return; }
-        if (parsed.origin !== origin || /\.(?:jpg|jpeg|png|gif|webp|svg|pdf|zip)$/i.test(parsed.pathname)) return;
-        const label = cleanText(anchor.attr("title") || anchor.attr("aria-label") || anchor.text() || anchor.find("img").first().attr("alt"), 180);
-        const dimensionMatch = `${label} ${decodeURIComponent(parsed.pathname)}`.match(sizePattern);
-        if (!dimensionMatch) return;
-        parsed.hash = "";
-        const size = `${dimensionMatch[1]} x ${dimensionMatch[2]}${dimensionMatch[3] ? ` + ${dimensionMatch[3]}` : ""} cm`;
-        options.push({ url: parsed.href, size, label: label || size });
-      });
-
+      const scopeText = cleanText(scope.text(), 4200);
+      if (scopeText.length > 4200) continue;
+      const options = collectSizeVariantAnchorCandidates($, scope, pageUrl);
+      addCurrentProductSizeOption(options, pageUrl, currentTitle);
       const unique = [...new Map(options.map(option => [normalizeProductUrl(option.url), option])).values()];
       if (unique.length >= 2 && unique.length <= 20) {
-        for (const option of unique) results.set(normalizeProductUrl(option.url), option);
+        addAll(unique);
         return false;
       }
     }
   });
 
-  return [...results.values()];
+  return results.size >= 2 ? [...results.values()].slice(0, 40) : [];
 }
 
 function extractNamedProductVariantOptions($) {
@@ -3998,34 +5019,80 @@ function extractNamedProductVariantOptions($) {
 function applyDetectedSizeVariant(product, variantLinks) {
   if (!product || !Array.isArray(variantLinks) || variantLinks.length < 2) return product;
   const matchingOption = variantLinks.find(option => normalizeProductUrl(option.url) === normalizeProductUrl(product.url));
-  const dimensionMatch = `${product.name || ""} ${product.url || ""}`.match(/(\d{2,3})\s*[x×]\s*(\d{2,3})(?:\s*\+\s*(\d{1,3}))?\s*(?:cm)?/i);
-  // The explicit selector label is authoritative. Some 4home legacy slugs
-  // contain a mismatched size even though the visible anchor label is correct.
-  if (!matchingOption && !dimensionMatch) return product;
-  const size = matchingOption?.size || `${dimensionMatch[1]} x ${dimensionMatch[2]}${dimensionMatch[3] ? ` + ${dimensionMatch[3]}` : ""} cm`;
-  const baseName = cleanText(String(product.name || "").replace(/[,\s-]*\d{2,3}\s*[x×]\s*\d{2,3}(?:\s*\+\s*\d{1,3})?\s*(?:cm)?\s*$/i, ""), 250);
-  if (!baseName || normalizeProductName(baseName).length < 8) return product;
+  const titleSize = extractDimensionVariant(`${product.name || ""} ${product.url || ""}`);
+  if (!matchingOption && !titleSize) return product;
+  const sizeInfo = matchingOption || titleSize;
+  const size = sizeInfo.size;
+  const baseName = cleanText(String(product.name || "").replace(/[ ,\s-]*\d+(?:[.,]\d+)?\s*(?:mm|cm)?\s*[x×]\s*\d+(?:[.,]\d+)?(?:\s*(?:mm|cm)?\s*[x×]\s*\d+(?:[.,]\d+)?)?\s*(?:mm|cm)\s*$/i, ""), 250);
+  if (!baseName || normalizeProductName(baseName).length < 5) return product;
   const matchingCurrentUrl = variantLinks.some(option => normalizeProductUrl(option.url) === normalizeProductUrl(product.url));
   if (!matchingCurrentUrl) return product;
-  const slugCounts = new Map();
-  for (const option of variantLinks) {
-    try {
-      const slug = new URL(option.url).pathname
-        .replace(/[,\s-]*\d{2,3}\s*(?:[-x×]\s*){1,2}\d{2,3}(?:\s*\+\s*\d{1,3})?(?:\s*cm)?\/?$/i, "")
-        .replace(/[-,\s]+$/g, "");
-      if (slug) slugCounts.set(slug, (slugCounts.get(slug) || 0) + 1);
-    } catch {}
-  }
-  const canonicalSlug = [...slugCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || baseName;
+  // The normalized base product name is stable across different SKU/slug suffixes.
+  // Do not derive the group from URL slugs: IKEA-like sibling variants use separate IDs.
+  const groupId = `size:${normalizeProductName(baseName)}`;
+  const dimensions = matchingOption?.dimensions || titleSize?.dimensions || null;
   return {
     ...product,
     isVariant: true,
-    variantGroupId: `size:${normalizeProductName(canonicalSlug)}`,
+    variantGroupId: groupId,
     variantGroupName: baseName,
     variantName: size,
-    variantAttributes: { ...(product.variantAttributes || {}), size },
+    variantAttributes: { ...(product.variantAttributes || {}), size, ...(dimensions ? { dimensions } : {}) },
+    ...(dimensions && !product.productDimensions && dimensions.width && dimensions.height ? {
+      productDimensions: { ...dimensions, source: "dom:variant-size-selector" }
+    } : {}),
     variantCount: variantLinks.length
   };
+}
+
+// Enrich a JSON-LD variant fast-path with page-level physical specifications.
+// The optimization preserves explicit variant records, but must not bypass
+// DOM-only dimensions and multi-parcel data exposed outside JSON-LD.
+function enrichJsonLdVariantsWithPhysicalSpecs(variants, pageUrl, pageTitle, currentSku, pagePhysicalSpecs) {
+  const pageUrlIdentity = normalizeProductUrl(pageUrl);
+  const normalizedCurrentSku = String(currentSku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const skuMatchesPage = Boolean(normalizedCurrentSku && variants.some(product =>
+    String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase() === normalizedCurrentSku
+  ));
+
+  return variants.map(product => {
+    const productUrl = normalizeProductUrl(product?.url || product?.sourceUrl || pageUrl);
+    const productSku = String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const matchesCurrentPage = skuMatchesPage
+      ? productSku === normalizedCurrentSku
+      : productUrl === pageUrlIdentity;
+    let enriched = { ...product };
+
+    if (matchesCurrentPage && pagePhysicalSpecs && typeof pagePhysicalSpecs === "object") {
+      enriched = {
+        ...enriched,
+        ...mergePhysicalSpecFields(enriched, pagePhysicalSpecs)
+      };
+      if (Array.isArray(pagePhysicalSpecs.shippingPackages) && pagePhysicalSpecs.shippingPackages.length) {
+        enriched.shippingPackages = pagePhysicalSpecs.shippingPackages;
+        enriched.packageCount = pagePhysicalSpecs.packageCount ?? enriched.packageCount ?? null;
+        enriched.packageCountSource = pagePhysicalSpecs.packageCountSource || enriched.packageCountSource || null;
+        enriched.shippingPackageSource = pagePhysicalSpecs.shippingPackageSource || enriched.shippingPackageSource || null;
+        enriched.shippingWeightQualifier = pagePhysicalSpecs.shippingWeightQualifier || enriched.shippingWeightQualifier || null;
+      }
+    }
+
+    // A sibling size variant may be listed in JSON-LD even though the current
+    // page contains another size's parcel breakdown. Its own dimensional title
+    // is safe to use, but never copy the current variant's shipping data to it.
+    const variantSize = extractDimensionVariant(product?.name || "");
+    const currentTitleSize = matchesCurrentPage ? extractDimensionVariant(pageTitle || "") : null;
+    const dimension = variantSize || currentTitleSize;
+    if (dimension?.dimensions) {
+      enriched.productDimensions = mergePhysicalDimensionInfo(enriched.productDimensions, dimension.dimensions);
+      enriched.variantAttributes = {
+        ...(enriched.variantAttributes && typeof enriched.variantAttributes === "object" ? enriched.variantAttributes : {}),
+        size: dimension.size,
+        dimensions: dimension.dimensions
+      };
+    }
+    return enriched;
+  });
 }
 
 // ==========================================
@@ -4768,6 +5835,35 @@ function getProductPageSignals(html, pageUrl, products, existingRoot = null) {
   };
 }
 
+function selectDirectProductRecords(products, signals) {
+  if (!Array.isArray(products) || !products.length) return [];
+
+  // A product detail page can expose multiple real, purchasable offers for
+  // flavours/sizes. selectMainProduct() is deliberately single-record logic;
+  // applying it to a complete variant family silently dropped sibling offers.
+  const groups = new Map();
+  for (const product of products) {
+    if (product?.isVariant !== true || !product.variantGroupId) continue;
+    const key = String(product.variantGroupId);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(product);
+  }
+  const heading = normalizeProductName(signals?.heading || "");
+  const path = normalizeProductName(signals?.path || "");
+  const scoredGroups = [...groups.values()].filter(group => group.length >= 2).map(group => {
+    const groupName = normalizeProductName(group[0]?.variantGroupName || group[0]?.name || "");
+    const tokens = [...new Set(groupName.split(/\s+/).filter(token => token.length > 1))];
+    const overlap = text => {
+      const source = new Set(String(text || "").split(/\s+/).filter(token => token.length > 1));
+      return tokens.length ? tokens.filter(token => source.has(token)).length / tokens.length : 0;
+    };
+    return { group, score: Math.max(overlap(heading) * 1.25, overlap(path)) };
+  }).sort((a, b) => b.score - a.score || b.group.length - a.group.length);
+
+  if (scoredGroups[0]?.score >= 0.20) return scoredGroups[0].group;
+  return selectMainProduct(products, signals);
+}
+
 function selectMainProduct(products, signals) {
   if (!products.length) return [];
 
@@ -4800,12 +5896,10 @@ function selectMainProduct(products, signals) {
   const best = ranked[0];
   if (!best || best.score < 0.20) return [];
 
-  // A product page can describe several sellable options as separate
-  // schema.org Offer records under one Product/AggregateOffer. Once those
-  // offers have been expanded into verified JSON-LD variants, do not collapse
-  // the group to the single flavour whose name scores highest against H1/URL.
-  // Keep the whole group, but only when at least two distinct records share
-  // the same explicit variantGroupId.
+  // RESTORED FROM GITHUB main / fix/gymbeam-preserve-jsonld-variants.
+  // A Product/AggregateOffer can contain several sellable variants. Once the
+  // best match is one of those verified JSON-LD offers, retain every sibling
+  // offer from the same explicit group instead of collapsing to one flavour.
   if (best.product.isVariant === true &&
       best.product.source === "json-ld-offer-variant" &&
       best.product.variantGroupId) {
@@ -5135,10 +6229,14 @@ export async function crawlWebsite(inputUrl, options = {}) {
       const isDirectProductPage = pages.length === 0 && (pageSignals.isDetail || isDirectProductUrl);
 
       if (isDirectProductPage) {
-        page.products = selectMainProduct(page.products, pageSignals);
-        if (page.products[0]) {
-          // Zdrojom ma byt skutocna URL detailu, nie chybny odkaz z metadata.
+        page.products = selectDirectProductRecords(page.products, pageSignals);
+        if (page.products.length === 1 && page.products[0]) {
+          // Keep a single-product canonical URL for ordinary products.
           page.products[0].url = response.url;
+        } else {
+          // Preserve variant-specific URLs (often canonical URL + #SKU) for
+          // each selectable offer. Only fill in a URL when the source omitted it.
+          for (const product of page.products) product.url = product.url || response.url;
         }
         isDirectProductUrl = true;
         isCategoryScopedCrawl = false;
@@ -5428,7 +6526,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   }));
 
   const diagnostics = {
-    importerVersion: "V3.66",
+    importerVersion: "V3.76",
     errorDetails: errors.slice(0, 10),
     productDetailCandidatesDiscovered: candidateProductDetailUrls.size,
     productDetailUrlsQueued: queuedCategoryDetailUrls.size,
