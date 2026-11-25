@@ -7,9 +7,16 @@ import ipaddr from "ipaddr.js";
 import { load as loadHtml } from "cheerio";
 
 // ==========================================
-// NOVA AI - WEBSITE IMPORTER V3.76
+// NOVA AI - WEBSITE IMPORTER V3.86.1
 // Universal product import: multilingual variant discovery, product dimensions and per-parcel package breakdown
-// V3.75 preserves DOM-only physical specs in JSON-LD variant fast-path and reads standalone package text nodes.
+// V3.86 adds conservative PDP extraction for SKU, EAN/GTIN, product weight and explicit stock availability.
+// V3.86.1 prevents generic availability headings (for example "Dostupnosť") from being interpreted as stock status.
+// V3.85 prioritizes explicit currency-qualified selling-price elements over mixed product-card text and records price provenance.
+// V3.84.1 selects only the primary product from queued detail pages while preserving explicitly grouped variants.
+// V3.82 adds a safe current-product fallback from page title/metadata when storefront dimensions are omitted from the raw HTTP HTML.
+// V3.81 reads explicitly scoped assembled-product measurement panels independently from package accordions.
+// V3.77 pairs split axis/value nodes and scopes page specs to the exact URL variant. V3.78 resolves repeated dimension-tab headings and explicitly pairs semantic measurement rows.
+// Preserves V3.77 variant identity, parcel breakdown and prior GymBeam variants.
 // Preserves V3.73 multilingual variants and the GymBeam JSON-LD offer-group fix.
 // produktov a cien
 // ==========================================
@@ -1031,6 +1038,27 @@ function parsePhysicalAxisLine(value) {
   return measurement ? { axis, value: measurement.value, raw: text } : null;
 }
 
+function parsePhysicalAxisLabel(value) {
+  const label = normalizePhysicalLabel(value)
+    .replace(/[：:]/g, " ")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const axisMap = [
+    ["width", /^(?:sirka|width|w|breite|largeur|larghezza|ancho|szerokosc)$/],
+    ["depth", /^(?:hlbka|hloubka|depth|tiefe|profondeur|profondita|profundidad|glebokosc)$/],
+    ["height", /^(?:vyska|height|h|hoehe|hauteur|altezza|altura|wysokosc)$/],
+    ["length", /^(?:dlzka|length|l|laenge|longueur|lunghezza|dlugosc)$/]
+  ];
+  return axisMap.find(([, pattern]) => pattern.test(label))?.[0] || null;
+}
+
+function parsePackageWeightLabel(value) {
+  const label = normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
+  if (!/^(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)(?:\s+(?:do|max(?:imum)?|up to|bis zu))?$/.test(label)) return null;
+  return /\b(?:do|max(?:imum)?|up to|bis zu)\b/.test(label) ? "upper-bound" : "exact";
+}
+
 function parsePackageWeightLine(value) {
   const rawText = decodeEntities(String(value || "")).replace(/\u00a0/g, " ").trim();
   const text = normalizePhysicalLabel(rawText);
@@ -1064,6 +1092,8 @@ function parseShippingPackageBlocks(inputBlocks) {
   let group = null;
   let currentPackage = null;
   let sawExplicitPackageIndex = false;
+  let pendingPackageAxis = null;
+  let pendingPackageWeightQualifier = null;
 
   const flushPackage = () => {
     if (!currentPackage) return;
@@ -1086,6 +1116,8 @@ function parseShippingPackageBlocks(inputBlocks) {
     flushPackage();
     group = null;
     sawExplicitPackageIndex = false;
+    pendingPackageAxis = null;
+    pendingPackageWeightQualifier = null;
   };
   const ensurePackage = () => {
     if (!group) group = { quantity: 1, componentCode: "", componentName: "", sku: "" };
@@ -1108,6 +1140,8 @@ function parseShippingPackageBlocks(inputBlocks) {
     const packageNo = text.match(/^(?:balenie|package|parcel|paket|colis)\s*(?:c\.?\s*)?(\d{1,3})\b/i);
     if (packageNo) {
       flushPackage();
+      pendingPackageAxis = null;
+      pendingPackageWeightQualifier = null;
       if (!group) group = { quantity: 1, componentCode: "", componentName: "", sku: "" };
       sawExplicitPackageIndex = true;
       currentPackage = {
@@ -1138,6 +1172,13 @@ function parseShippingPackageBlocks(inputBlocks) {
       const item = ensurePackage();
       item.dimensions[axis.axis] = axis.value;
       item.dimensions.raw = item.dimensions.raw ? `${item.dimensions.raw} × ${axis.raw}` : axis.raw;
+      pendingPackageAxis = null;
+      continue;
+    }
+    const axisLabel = parsePhysicalAxisLabel(raw);
+    if (axisLabel) {
+      pendingPackageAxis = axisLabel;
+      pendingPackageWeightQualifier = null;
       continue;
     }
     const weight = parsePackageWeightLine(raw);
@@ -1145,7 +1186,39 @@ function parseShippingPackageBlocks(inputBlocks) {
       const item = ensurePackage();
       item.weight = weight.value;
       item.weightQualifier = weight.qualifier;
+      pendingPackageWeightQualifier = null;
+      pendingPackageAxis = null;
       continue;
+    }
+    const weightQualifier = parsePackageWeightLabel(raw);
+    if (weightQualifier) {
+      pendingPackageWeightQualifier = weightQualifier;
+      pendingPackageAxis = null;
+      continue;
+    }
+    if (pendingPackageAxis) {
+      const measurement = parsePhysicalMeasurement(raw, "cm", "dimension");
+      if (measurement) {
+        const item = ensurePackage();
+        item.dimensions[pendingPackageAxis] = measurement.value;
+        item.dimensions.raw = item.dimensions.raw
+          ? `${item.dimensions.raw} × ${raw}`
+          : `${pendingPackageAxis}: ${raw}`;
+        pendingPackageAxis = null;
+        continue;
+      }
+      pendingPackageAxis = null;
+    }
+    if (pendingPackageWeightQualifier) {
+      const measurement = parsePhysicalMeasurement(raw, "kg", "weight");
+      if (measurement) {
+        const item = ensurePackage();
+        item.weight = measurement.value;
+        item.weightQualifier = pendingPackageWeightQualifier;
+        pendingPackageWeightQualifier = null;
+        continue;
+      }
+      pendingPackageWeightQualifier = null;
     }
 
     // The first descriptive line after a quantity/brand marker is the component name.
@@ -1196,25 +1269,85 @@ function extractProductDimensionsFromBlocks(inputBlocks) {
   );
   const normalize = value => normalizePhysicalLabel(value).replace(/[：:]/g, " ").replace(/\s+/g, " ").trim();
   const headingPattern = /^(?:rozmery|rozmery produktu|dimensions|product dimensions|measurements|abmessungen|misure|dimensiones)$/i;
-  const start = blocks.findIndex(block => headingPattern.test(normalize(block.text)));
-  const result = { width: null, height: null, depth: null, length: null, diameter: null, thickness: null, unit: "cm", raw: null, source: "dom:dimensions-section" };
-  // IKEA-like pages sometimes publish assembled dimensions as an unlabeled
-  // list of axes (Šírka / Hĺbka / Výška) without a preceding "Rozmery" heading.
-  // In that case collect the first axis group before the package section. Do
-  // not scan into logistics rows, which describe cartons, not the assembled item.
-  if (start < 0) {
-    const packageStart = blocks.findIndex(block =>
-      /^(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,70}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(normalize(block.text)) ||
-      /^(?:balenie|balenia|packages?|packaging)$/i.test(normalize(block.text))
-    );
-    const limit = packageStart >= 0 ? packageStart : blocks.length;
-    for (let index = 0; index < limit; index++) {
-      const axis = parsePhysicalAxisLine(blocks[index].text);
-      if (axis) result[axis.axis] = axis.value;
+  const packageBoundary = block => {
+    const text = normalize(block.text);
+    return /^(?:tento vyrobok|vyrobok|this product|product|dieses produkt|ce produit).{0,90}?(?:pozostava z|sa sklada z|consists of|includes|besteht aus|comprend)\s*\d{1,3}\s*(?:balen[ií]|packages?|pakete|colis|opakowan)/i.test(text) ||
+      /^(?:balenie|balenia|packages?|packaging|package details|package information|verpackung|pakete|opakowanie|opakowania|imballaggio|emballage|embalaje|colis)(?:\s+(?:c\.?\s*)?\d{1,3})?$/i.test(text) ||
+      /^(?:\d{1,2})\s*[x×]\s*[\p{L}\p{N}_./-]/u.test(text);
+  };
+  const axisNames = [
+    ["width", /^(?:sirka|width|breite|largeur|larghezza|ancho|szerokosc)$/],
+    ["depth", /^(?:hlbka|depth|tiefe|profondeur|profondita|glebokosc)$/],
+    ["height", /^(?:vyska|height|hoehe|hauteur|altezza|altura|wysokosc)$/],
+    ["length", /^(?:dlzka|length|laenge|longueur|lunghezza|dlugosc)$/]
+  ];
+
+  const parseFrom = (startIndex, headingMode) => {
+    const result = { width: null, height: null, depth: null, length: null, diameter: null, thickness: null, unit: "cm", raw: null, source: "dom:dimensions-section" };
+    let pendingAxis = null;
+    let foundAxes = 0;
+    let tupleFallback = null;
+
+    for (let index = startIndex + 1; index < blocks.length; index++) {
+      const block = blocks[index];
+      const text = String(block.text || "").trim();
+      const normalized = normalize(text);
+      if (!normalized) continue;
+      if (packageBoundary(block)) break;
+
+      // Do not let an early navigation-tab label such as "Rozmery" terminate
+      // discovery permanently. Each candidate heading is tested separately;
+      // unrelated section headings only terminate the current candidate.
+      if (headingMode && /^h[1-6]$/.test(block.tag) && !headingPattern.test(normalized)) break;
+
+      const directAxisLine = parsePhysicalAxisLine(text);
+      if (directAxisLine) {
+        if (!(Number(result[directAxisLine.axis]) > 0)) {
+          result[directAxisLine.axis] = directAxisLine.value;
+          foundAxes++;
+        }
+        pendingAxis = null;
+        if (foundAxes >= 3) break;
+        continue;
+      }
+
+      const axis = axisNames.find(([, pattern]) => pattern.test(normalized))?.[0] || parsePhysicalAxisLabel(text);
+      if (axis) {
+        pendingAxis = axis;
+        continue;
+      }
+
+      if (pendingAxis) {
+        const measurement = parsePhysicalMeasurement(text, "cm", "dimension");
+        if (measurement) {
+          if (!(Number(result[pendingAxis]) > 0)) {
+            result[pendingAxis] = measurement.value;
+            foundAxes++;
+          }
+          pendingAxis = null;
+          if (foundAxes >= 3) break;
+          continue;
+        }
+        pendingAxis = null;
+      }
+
+      const tuple = parseDimensionTuple(text, "Rozmery produktu", "cm", "dom:dimensions-section");
+      if (tuple && ["width", "height", "depth", "length"].filter(key => Number(tuple[key]) > 0).length >= 2 && !tupleFallback) {
+        tupleFallback = tuple;
+      }
     }
-    const foundUnheaded = ["width", "height", "depth", "length"].filter(axis => Number(result[axis]) > 0).length;
-    if (foundUnheaded < 2) return null;
-    result.source = "dom:unheaded-product-dimension-rows";
+
+    if (tupleFallback) {
+      for (const key of ["width", "height", "depth", "length"]) {
+        if (!(Number(result[key]) > 0) && Number(tupleFallback[key]) > 0) result[key] = tupleFallback[key];
+      }
+    }
+
+    const found = ["width", "height", "depth", "length"].filter(axis => Number(result[axis]) > 0).length;
+    if (found < 2) return null;
+    result.source = headingMode
+      ? "dom:dimensions-section"
+      : foundAxes >= 2 ? "dom:unheaded-product-dimension-rows" : "dom:unheaded-product-dimension-tuple";
     result.raw = [
       result.width ? `Š ${result.width} cm` : "",
       result.depth ? `H ${result.depth} cm` : "",
@@ -1222,61 +1355,23 @@ function extractProductDimensionsFromBlocks(inputBlocks) {
       result.length ? `D ${result.length} cm` : ""
     ].filter(Boolean).join(" × ");
     return result;
+  };
+
+  // Modern storefronts often repeat the word "Dimensions" in their tab bar
+  // before the real measurements panel. Try every matching heading and accept
+  // only a candidate that actually yields at least two physical axes.
+  const headingIndexes = [];
+  blocks.forEach((block, index) => {
+    if (headingPattern.test(normalize(block.text))) headingIndexes.push(index);
+  });
+  for (const headingIndex of headingIndexes) {
+    const candidate = parseFrom(headingIndex, true);
+    if (candidate) return candidate;
   }
-  let pendingAxis = null;
-  const axisNames = [
-    ["width", /^(?:sirka|width|breite|largeur|larghezza|ancho|szerokosc)$/],
-    ["depth", /^(?:hlbka|depth|tiefe|profondeur|profondita|glebokosc)$/],
-    ["height", /^(?:vyska|height|hoehe|hauteur|altezza|altura|wysokosc)$/],
-    ["length", /^(?:dlzka|length|laenge|longueur|lunghezza|dlugosc)$/]
-  ];
-  for (let index = start + 1; index < blocks.length; index++) {
-    const block = blocks[index];
-    const text = String(block.text || "").trim();
-    const normalized = normalize(text);
-    if (!normalized) continue;
-    if (/^h[1-6]$/.test(block.tag) && !/^(?:rozmery|dimensions|measurements|product dimensions)$/i.test(normalized)) break;
-    if (/^(?:balenie|balenia|packages?|packaging)$/i.test(normalized)) break;
-    const directAxisLine = parsePhysicalAxisLine(text);
-    if (directAxisLine) {
-      result[directAxisLine.axis] = directAxisLine.value;
-      pendingAxis = null;
-      continue;
-    }
-    const matchedAxis = axisNames.find(([, pattern]) => pattern.test(normalized));
-    if (matchedAxis) {
-      const line = parsePhysicalAxisLine(text);
-      if (line) {
-        result[line.axis] = line.value;
-        pendingAxis = null;
-        continue;
-      }
-      pendingAxis = matchedAxis[0];
-      continue;
-    }
-    if (pendingAxis) {
-      const measurement = parsePhysicalMeasurement(text, "cm", "dimension");
-      if (measurement) {
-        result[pendingAxis] = measurement.value;
-        pendingAxis = null;
-        continue;
-      }
-      pendingAxis = null;
-    }
-    const tuple = parseDimensionTuple(text, "Rozmery produktu", "cm", "dom:dimensions-section");
-    if (tuple) {
-      for (const axis of ["width", "height", "depth", "length"]) if (Number(tuple[axis]) > 0) result[axis] = tuple[axis];
-    }
-  }
-  const found = ["width", "height", "depth", "length"].some(axis => Number(result[axis]) > 0);
-  if (!found) return null;
-  result.raw = [
-    result.width ? `Š ${result.width} cm` : "",
-    result.depth ? `H ${result.depth} cm` : "",
-    result.height ? `V ${result.height} cm` : "",
-    result.length ? `D ${result.length} cm` : ""
-  ].filter(Boolean).join(" × ");
-  return result;
+
+  // Some stores have no dimensions heading at all. In that case keep the
+  // first complete unheaded axis group before the package/component section.
+  return parseFrom(-1, false);
 }
 
 function physicalUnitFromLabel(label) {
@@ -1527,6 +1622,8 @@ function extractPhysicalSpecsFromStructured(...objects) {
 function extractPhysicalSpecsFromDom($, container) {
   if (!container || !container.length) return {};
   const output = {};
+  const isExcludedHere = element => isExcludedProductAreaWithin($, element, container);
+  let hasExplicitProductPhysicalLabel = false;
   const readText = node => cleanText($(node).text() || $(node).attr("content") || $(node).attr("value") || "", 300);
 
   const isShippingContext = node => {
@@ -1537,6 +1634,20 @@ function extractPhysicalSpecsFromDom($, container) {
         current.attr("class"), current.attr("id"), current.attr("data-testid"),
         current.attr("aria-label"), current.attr("itemtype")
       ].filter(Boolean).join(" ").toLowerCase();
+
+      // Stop at an explicit assembled-product dimensions section. Some stores
+      // (notably IKEA) place the product-dimensions accordion and the package
+      // breakdown inside one shared wrapper. Looking at that wrapper's full
+      // text sees "This product consists of N packages" and incorrectly marks
+      // the sibling product rows as shipping rows. This boundary must win
+      // before the broader logistics-text fallback below.
+      // Attributes are joined with spaces above, so the section token may be
+      // preceded by whitespace (e.g. "... pipf-accordion__item measurements-tab-measurements").
+      // Accept whitespace as a token boundary as well as hyphens/underscores.
+      if (/(?:^|[\s_-])(?:measurements-tab-measurements|product-measurements|product-dimensions|assembled-dimensions)(?:$|[\s_-])/i.test(marker)) {
+        return false;
+      }
+
       if (/(?:logistic|logistika|shipping|delivery|transport|package|packaging|parcel|preprav|balen|versand|verpack|envio)/i.test(marker)) return true;
 
       const tag = String(element?.tagName || "").toLowerCase();
@@ -1559,12 +1670,16 @@ function extractPhysicalSpecsFromDom($, container) {
   };
 
   const addPair = (label, value, source, shippingContext = false) => {
+    const labelText = normalizePhysicalLabel(label);
+    const explicitProductLabel = /(?:product|produktu|netto|net weight|rozmery\s+produktu|product\s+dimensions|hmotnost\s+produktu)/i.test(labelText);
+    if (explicitProductLabel) hasExplicitProductPhysicalLabel = true;
     const safeLabel = shippingContext && !/(?:product|produktu|netto|net weight)/i.test(String(label || ""))
       ? `Shipping ${label}` : label;
-    applyPhysicalSpecPair(output, safeLabel, value, source);
+    applyPhysicalSpecPair(output, safeLabel, value, explicitProductLabel ? `${source}:explicit-product` : source);
   };
 
   container.find("tr").slice(0, 700).each((_, row) => {
+    if (isExcludedHere(row)) return;
     const cells = $(row).find("th, td").toArray();
     if (cells.length < 2) return;
     const label = readText(cells[0]);
@@ -1573,6 +1688,7 @@ function extractPhysicalSpecsFromDom($, container) {
   });
 
   container.find("dl").slice(0, 120).each((_, list) => {
+    if (isExcludedHere(list)) return;
     const shippingContext = isShippingContext(list);
     $(list).children("dt").each((_, dt) => {
       const label = readText(dt);
@@ -1581,13 +1697,43 @@ function extractPhysicalSpecsFromDom($, container) {
     });
   });
 
+  // Many modern product pages put the axis name and value in sibling spans
+  // inside one semantic measurement row (e.g. "Šírka" + "200 cm"). Parse
+  // these pairs directly as well as through the generic text-node walker below.
+  // Shipping/package rows remain shipping data because their ancestor context
+  // is checked before the pair is applied.
+  const pairedMeasurementRows = container.find(
+    "[class*='measurement-row'], [class*='dimension-row'], [data-testid*='measurement-row'], [data-testid*='dimension-row']"
+  ).slice(0, 1200);
+  pairedMeasurementRows.each((_, element) => {
+    if (isExcludedHere(element)) return;
+    const row = $(element);
+    const labelNode = row.find(
+      "[class*='measurement-name'], [class*='measurement-label'], [class*='dimension-name'], [class*='dimension-label'], [class*='attribute-name'], [class*='specification-name'], [class*='specification-label'], [class*='spec-label'], th, dt"
+    ).first();
+    const valueNode = row.find(
+      "[class*='measurement-value'], [class*='dimension-value'], [class*='attribute-value'], [class*='specification-value'], [class*='spec-value'], td, dd"
+    ).first();
+    if (!labelNode.length || !valueNode.length) return;
+    const label = readText(labelNode);
+    const value = readText(valueNode);
+    if (label && value) addPair(label, value, "dom:paired-measurement-row", isShippingContext(row));
+  });
+
   container.find("li, .product-attribute, [class*='specification-row'], [class*='attribute-row'], [class*='spec-row']").slice(0, 1000).each((_, element) => {
+    if (isExcludedHere(element)) return;
     const text = readText(element);
     const match = text.match(/^\s*([^:：]{2,70})\s*[:：]\s*(.{1,180})$/);
     if (match) addPair(match[1], match[2], "dom:labelled-specification", isShippingContext(element));
   });
 
-  const fullText = container.text().replace(/\u00a0/g, " ").replace(/[\t\r]+/g, " ").replace(/\s+/g, " ");
+  // Exclude recommendation/upsell areas before broad labelled-text fallbacks;
+  // otherwise an accessory's weight or dimensions can leak into this product.
+  const fullTextContainer = container.clone();
+  fullTextContainer.find("*").toArray().reverse().forEach(element => {
+    if (isExcludedProductAreaWithin($, element, fullTextContainer)) $(element).remove();
+  });
+  const fullText = fullTextContainer.text().replace(/\u00a0/g, " ").replace(/[\t\r]+/g, " ").replace(/\s+/g, " ");
   const combinedPatterns = [
     [/(?:rozmery\s+balenia|package\s+dimensions|shipping\s+dimensions|carton\s+dimensions|rozmery\s+prepravneho\s+obalu|wymiary\s+opakowania|rozmiar\s+opakowania|packmasse|verpackungsmass)\s*[:：-]\s*([^|;]{3,100})/gi, "Rozmery balenia"],
     [/(?:rozmery\s+produktu|product\s+dimensions|rozmery\s+produktu)\s*[:：-]\s*([^|;]{3,100})/gi, "Rozmery produktu"]
@@ -1645,6 +1791,7 @@ function extractPhysicalSpecsFromDom($, container) {
   const walkPhysicalDomNode = element => {
     if (!element) return;
     const type = String(element.type || "").toLowerCase();
+    if (type !== "text" && type !== "comment" && isExcludedHere(element)) return;
     if (type === "text" || element.nodeType === 3) {
       const raw = cleanText(decodeEntities(String(element.data ?? element.nodeValue ?? "")), 160);
       if (!raw || raw.length > 100) return;
@@ -1750,10 +1897,27 @@ function extractPhysicalSpecsFromDom($, container) {
   // If the store puts the assembled dimensions directly in the product title
   // (e.g. "200x66x201 cm") but does not expose a separate dimensions block,
   // preserve that explicit source text as a lower-confidence product dimension.
-  if (!hasPhysicalDimensionData(output.productDimensions)) {
+  {
     const titleText = cleanText(getPrimaryProductTitleNode($).text() || container.find("h1").first().text() || "", 300);
     const titleDimensions = extractDimensionVariant(titleText);
-    if (titleDimensions && titleDimensions.values.length === 3) {
+    const existingSource = String(output.productDimensions?.source || "");
+    const hasExplicitSectionDimensions = Boolean(sectionDimensions);
+    const hasExplicitLabelledProductDimensions = /dom:labelled-dimensions|json:additionalproperty/.test(existingSource);
+    // A title tuple is a reliable fallback for the assembled item. It must
+    // replace generic axis rows that leaked from component/package lists,
+    // but never override a dedicated dimensions section or explicit labelled
+    // product-dimension field (which can contain more precise decimals).
+    if (titleDimensions && titleDimensions.values.length === 3 && hasExplicitSectionDimensions) {
+      // Fill only missing axes from the title; the dedicated DOM values keep
+      // precedence because they can be more precise than rounded title text.
+      output.productDimensions = mergePhysicalDimensionInfo(output.productDimensions, titleDimensions.dimensions);
+    } else if (titleDimensions && titleDimensions.values.length === 3 &&
+        !hasExplicitSectionDimensions && !hasExplicitLabelledProductDimensions) {
+      output.productDimensions = {
+        ...titleDimensions.dimensions,
+        source: "dom:product-title-dimension"
+      };
+    } else if (!hasPhysicalDimensionData(output.productDimensions) && titleDimensions && titleDimensions.values.length === 3) {
       output.productDimensions = {
         ...titleDimensions.dimensions,
         source: "dom:product-title-dimension"
@@ -1783,7 +1947,89 @@ function extractPhysicalSpecsFromDom($, container) {
       delete output.shippingWeightQualifier;
       delete output.shippingWeightSource;
     }
+
+    // When a page exposes a parcel/component breakdown, generic DOM labels
+    // such as "Weight", "Width" or "Length" cannot safely be assumed to
+    // describe the assembled product. Keep explicitly product/net-labelled
+    // values; suppress unqualified DOM values unless the assembled dimensions
+    // were independently read from the product section or explicit title.
+    if (output.productWeightSource && !/explicit-product/.test(output.productWeightSource)) {
+      delete output.productWeight;
+      delete output.productWeightUnit;
+      delete output.productWeightSource;
+    }
+    const dimensionsSource = String(output.productDimensions?.source || "");
+    if (!sectionDimensions && !hasExplicitProductPhysicalLabel &&
+        /^(?:dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-dimensions)/.test(dimensionsSource)) {
+      delete output.productDimensions;
+    }
   }
+
+  // Read assembled-product measurements from an explicitly identified
+  // dimensions panel as a separate scope. IKEA's product measurements and
+  // package breakdown can share outer accordion wrappers, so this final
+  // scoped pass prevents package-context detection from discarding the
+  // assembled product's own width/depth/height values.
+  const explicitProductMeasurementSections = container.find(
+    "[id='measurements-tab-measurements'], [id='SEC_measurements-tab-measurements'], " +
+    "[id='product-measurements'], [id='product-dimensions'], [id='assembled-dimensions']"
+  ).slice(0, 8);
+  let scopedProductDimensions = null;
+  explicitProductMeasurementSections.each((_, sectionElement) => {
+    if (isExcludedHere(sectionElement)) return;
+    const section = $(sectionElement);
+    const sectionMarker = [
+      section.attr("id"), section.attr("class"), section.attr("aria-label"),
+      section.find("h1, h2, h3, h4, [role='heading']").first().text()
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (/(?:package|packaging|shipping|parcel|balen|preprav|versand|verpack)/i.test(sectionMarker)) return;
+
+    const rows = section.find(
+      "[class*='measurement-row'], [class*='dimension-row'], " +
+      "[data-testid*='measurement-row'], [data-testid*='dimension-row']"
+    ).slice(0, 120);
+    const dimensions = emptyPhysicalDimensions();
+    const axisPatterns = [
+      ["width", /^(?:sirka|width|w|breite|largeur|larghezza|ancho|szerokosc)$/],
+      ["height", /^(?:vyska|height|hoehe|hauteur|altezza|altura|wysokosc)$/],
+      ["depth", /^(?:hlbka|hloubka|depth|tiefe|profondeur|profondita|profundidad|glebokosc)$/],
+      ["length", /^(?:dlzka|length|laenge|longueur|lunghezza|dlugosc)$/]
+    ];
+    rows.each((__, rowElement) => {
+      if (isExcludedHere(rowElement)) return;
+      const row = $(rowElement);
+      const labelNode = row.find(
+        "[class*='measurement-name'], [class*='measurement-label'], [class*='dimension-name'], " +
+        "[class*='dimension-label'], [class*='attribute-name'], [class*='specification-name'], " +
+        "[class*='specification-label'], th, dt"
+      ).first();
+      const valueNode = row.find(
+        "[class*='measurement-value'], [class*='dimension-value'], [class*='attribute-value'], " +
+        "[class*='specification-value'], td, dd"
+      ).first();
+      if (!labelNode.length || !valueNode.length) return;
+      const label = normalizePhysicalLabel(readText(labelNode));
+      const value = readText(valueNode);
+      const axis = axisPatterns.find(([, pattern]) => pattern.test(label))?.[0];
+      if (!axis) return;
+      const measurement = parsePhysicalMeasurement(value, physicalUnitFromLabel(value) || "", "dimension");
+      if (!measurement) return;
+      dimensions[axis] = measurement.value;
+    });
+
+    const foundAxes = PHYSICAL_DIMENSION_AXES.filter(axis => Number(dimensions[axis]) > 0).length;
+    if (foundAxes >= 2) {
+      dimensions.unit = "cm";
+      dimensions.source = "dom:explicit-product-measurements-section";
+      scopedProductDimensions = mergePhysicalDimensionInfo(dimensions, scopedProductDimensions);
+    }
+  });
+  if (scopedProductDimensions) {
+    // The explicitly labelled assembled-product panel is more authoritative
+    // than generic rows gathered from a shared product/package wrapper.
+    output.productDimensions = mergePhysicalDimensionInfo(scopedProductDimensions, output.productDimensions);
+  }
+
   return output;
 }
 
@@ -2018,15 +2264,25 @@ export function getOfferPrice(offers) {
     const unitPriceUnit = unitSpecification
       ? extractStructuredUnit(unitSpecification, unitSpecification.referenceQuantity)
       : null;
+    const availabilityRaw = offer.availability || null;
+    const availabilityInfo = normalizeAvailabilityStatus(availabilityRaw);
+    const inventoryRaw = offer.inventoryLevel?.value ?? offer.inventoryLevel?.valueText ??
+      offer.stockQuantity ?? offer.availableQuantity ?? offer.inventoryQuantity ?? null;
+    const inventoryMatch = inventoryRaw == null ? null : String(inventoryRaw).replace(/\s/g, "").match(/^(\d{1,7})(?:[,.]0+)?(?:ks|pcs|pieces?)?$/i);
+    const stockQuantity = inventoryMatch ? Number(inventoryMatch[1]) : null;
 
     prices.push({
       price,
+      priceExtractionEvidence: { method: "json-ld-offer", rawPrice: rawPrice == null ? null : String(rawPrice), currency: currency || null },
       packagePrice: rawPackagePrice != null ? price : null,
       unitPrice: unitPrice != null && unitSpecification ? unitPrice : null,
       unitPriceUnit: unitPriceUnit || null,
       priceBasis: rawPackagePrice != null ? "offer-price" : "unspecified-price-specification",
       currency,
-      availability: offer.availability || null,
+      availability: availabilityInfo?.availability || availabilityRaw,
+      availabilityText: availabilityInfo?.availabilityText || availabilityRaw,
+      availabilitySource: availabilityRaw ? "json-ld:offer.availability" : null,
+      ...(stockQuantity != null ? { stockQuantity, stockQuantityUnit: "ks", stockSource: "json-ld:offer.inventoryLevel" } : {}),
       unit: rawPackagePrice != null
         ? extractStructuredUnit({ ...offer, priceSpecification: null })
         : null
@@ -2063,6 +2319,294 @@ export function extractProductIdentifiers(value = {}) {
     brand: scalar(brandValue)
   };
   return Object.fromEntries(Object.entries(identifiers).filter(([, item]) => item));
+}
+
+function normalizeAvailabilityStatus(rawValue) {
+  const raw = cleanText(String(rawValue ?? ""), 180);
+  if (!raw) return null;
+  const normalized = normalizePhysicalLabel(raw).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!normalized) return null;
+
+  // A generic field heading is not a stock status. Check this before any
+  // positive token matching: "Dostupnosť" contains the stem "dostupn" but
+  // does not tell us whether the product is available.
+  if (/^(?:availability|product availability|dostupnost|dostupnost produktu|stav dostupnosti|stock|stock status|stav skladu|stav skladovych zasob)$/.test(normalized)) return null;
+
+  // Negative states must be checked before generic "available" / "stock" tokens.
+  if (/(?:out of stock|outofstock|sold out|soldout|unavailable|discontinued|vypredan|nedostupn|nie je skladom|momentalne nedostup|momentally unavailable)/.test(normalized)) {
+    return { availability: "OutOfStock", availabilityText: raw };
+  }
+  if (/(?:pre order|preorder|predobjednavk)/.test(normalized)) {
+    return { availability: "PreOrder", availabilityText: raw };
+  }
+  if (/(?:back order|backorder|na objednavku|objednavku|dodanie na objednavku)/.test(normalized)) {
+    return { availability: "BackOrder", availabilityText: raw };
+  }
+  if (/(?:limited availability|limitedavailability|obmedzena dostupnost|posledne kusy)/.test(normalized)) {
+    return { availability: "LimitedAvailability", availabilityText: raw };
+  }
+  if (/(?:in stock|instock|available|skladom|na sklade|dostupne|dostupny|ihned k odberu|ihned dostupn)/.test(normalized)) {
+    return { availability: "InStock", availabilityText: raw };
+  }
+  // Keep explicit, short store status text even when it cannot safely be mapped
+  // to a universal stock enum. Never infer an unknown state from page-wide copy.
+  if (raw.length <= 120 && !/^https?:\/\//i.test(raw)) {
+    return { availability: raw, availabilityText: raw };
+  }
+  return null;
+}
+
+function normalizeIdentifierValue(rawValue, kind) {
+  const raw = cleanText(String(rawValue ?? ""), 160).replace(/^(?:SKU|EAN(?:[\s-]?(?:8|12|13|14))?|GTIN(?:[\s-]?(?:8|12|13|14))?|UPC|Barcode|Čiarový kód|Ciarovy kod)\s*[:#-]?\s*/i, "").trim();
+  if (!raw) return null;
+  if (kind === "gtin") {
+    const digits = raw.replace(/[^0-9]/g, "");
+    // GTIN-8/12/13/14 are numeric identifiers. Reject arbitrary model strings
+    // rather than silently mislabelling them as EAN values.
+    return [8, 12, 13, 14].includes(digits.length) ? digits : null;
+  }
+  return raw.length <= 100 ? raw : null;
+}
+
+function readProductAttributeNodeValue($, node) {
+  const element = $(node);
+  for (const attribute of [
+    "content", "value", "data-value", "data-sku", "data-product-sku", "data-product-code", "data-article-number",
+    "data-ean", "data-gtin", "data-barcode", "data-stock-status",
+    "data-availability", "data-stock-quantity", "data-stock-count"
+  ]) {
+    const value = element.attr(attribute);
+    if (value != null && String(value).trim()) return cleanText(String(value), 180);
+  }
+  const href = element.attr("href");
+  if (href && /itemprop=["']availability/i.test(String(element.attr("itemprop") || ""))) return cleanText(href, 180);
+  return cleanText(element.text(), 180);
+}
+
+function collectProductLabelValuePairs($, root) {
+  const pairs = [];
+  const seen = new Set();
+  const isExcludedHere = node => isExcludedProductAreaWithin($, node, root);
+  const push = (label, value, node) => {
+    const labelText = cleanText(String(label || ""), 100);
+    const valueText = cleanText(String(value || ""), 180);
+    if (!labelText || !valueText || labelText.length > 90 || valueText.length > 180) return;
+    if (isExcludedHere(node)) return;
+    const key = `${normalizePhysicalLabel(labelText)}|${valueText}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    pairs.push({ label: labelText, value: valueText, node });
+  };
+
+  root.find("tr").slice(0, 900).each((_, row) => {
+    const cells = $(row).find("th,td").toArray();
+    if (cells.length >= 2) push(readProductAttributeNodeValue($, cells[0]), readProductAttributeNodeValue($, cells[1]), row);
+  });
+  root.find("dl").slice(0, 180).each((_, list) => {
+    $(list).children("dt").each((_, dt) => {
+      const dd = $(dt).next("dd").first();
+      if (dd.length) push(readProductAttributeNodeValue($, dt), readProductAttributeNodeValue($, dd), list);
+    });
+  });
+
+  const rowSelector = [
+    "[class*='specification-row' i]", "[class*='attribute-row' i]", "[class*='product-attribute' i]",
+    "[class*='spec-row' i]", "[class*='detail-row' i]", "[data-testid*='specification' i]",
+    "[data-testid*='attribute' i]", "[class*='key-value' i]"
+  ].join(",");
+  root.find(rowSelector).slice(0, 1200).each((_, row) => {
+    const rowNode = $(row);
+    const labelNode = rowNode.find("th,dt,[class*='label' i],[class*='name' i],[class*='key' i],strong,b,label").first();
+    const valueNode = rowNode.find("td,dd,[class*='value' i],[class*='content' i],[class*='val' i]").first();
+    if (labelNode.length && valueNode.length) push(readProductAttributeNodeValue($, labelNode), readProductAttributeNodeValue($, valueNode), row);
+  });
+
+  // Compact rows such as "EAN: 1234567890123" are common in less semantic themes.
+  root.find("li,p,div,span,td,dd").slice(0, 4000).each((_, element) => {
+    const node = $(element);
+    if (node.children().length > 4) return;
+    const text = cleanText(node.text(), 260);
+    const match = text.match(/^\s*([^:：]{2,80})\s*[:：]\s*(.{1,160})\s*$/);
+    if (match) push(match[1], match[2], element);
+  });
+
+  // A label and value can be adjacent sibling spans without a common row class.
+  const labelPattern = /^(?:sku|product sku|kod produktu|kod tovaru|cislo produktu|cislo vyrobku|product code|article number|article no|item number|item no|product number|catalog(?:ue)? number|part number|p\/n|artikelnummer|kod artiklu|cislo artiklu|ean(?: ?(?:8|12|13|14))?|ean kod|kod ean|gtin(?: ?(?:8|12|13|14))?|gtin kod|ean gtin|upc|barcode|bar code|ciarovy kod|carovy kod|hmotnost|vaha|weight|net weight|product weight|hmotnost produktu|hmotnost balenia|gross weight|shipping weight|dostupnost|availability|stock status|stav skladu|skladom|stock quantity|available quantity|quantity in stock|pocet kusov skladom|mnozstvo skladom)$/;
+  root.find("th,dt,strong,b,label,span,[class*='label' i],[class*='name' i]").slice(0, 2500).each((_, element) => {
+    const node = $(element);
+    const label = cleanText(node.text(), 90);
+    const normalizedLabel = normalizePhysicalLabel(label).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!labelPattern.test(normalizedLabel) || isExcludedHere(element)) return;
+    let valueNode = node.next();
+    if (!valueNode.length) valueNode = node.parent().children().filter((__, child) => child !== element).first();
+    if (valueNode.length) push(label, readProductAttributeNodeValue($, valueNode), element);
+  });
+  return pairs;
+}
+
+function isShippingProductAttributeContext($, node) {
+  let current = $(node);
+  for (let depth = 0; current.length && depth < 8; depth++, current = current.parent()) {
+    const marker = [current.attr("class"), current.attr("id"), current.attr("data-testid"), current.attr("aria-label")]
+      .filter(Boolean).join(" ").toLowerCase();
+    if (/(?:shipping|delivery|logistic|package|packaging|parcel|carton|preprav|balen|versand|verpack|transport|expedition)/i.test(marker)) return true;
+    const heading = current.children("h1,h2,h3,h4,caption,legend").slice(0, 4).text();
+    if (/(?:shipping|delivery|logistic|package|packaging|parcel|carton|preprav|balen|versand|verpack|transport)/i.test(heading)) return true;
+    const tag = String(current.get(0)?.tagName || "").toLowerCase();
+    if (["main", "body", "html"].includes(tag)) break;
+  }
+  return false;
+}
+
+function extractCurrentProductPageAttributes($, pageUrl, productArea = null) {
+  let parsedUrl;
+  try { parsedUrl = new URL(pageUrl); } catch { return {}; }
+  const pathname = parsedUrl.pathname;
+  if (/\/(?:kategoria|category|categories|collection|collections|catalog|catalogue)(?:\/|$)/i.test(pathname)) return {};
+  const titleNode = getPrimaryProductTitleNode($);
+  const title = cleanProductTitle(titleNode.text() || $("meta[property='og:title']").attr("content") || $("title").first().text());
+  if (!title || !isLikelyRealProductName(title)) return {};
+
+  const root = productArea && productArea.length ? productArea : ($("main").first().length ? $("main").first() : $("body"));
+  const pairs = collectProductLabelValuePairs($, root);
+  const isExcludedHere = node => isExcludedProductAreaWithin($, node, root);
+  const readFirst = (selectors, attributes = ["content", "value", "data-value", "data-sku", "data-ean", "data-gtin", "data-barcode"]) => {
+    for (const selector of selectors) {
+      const nodes = root.find(selector).add($(selector).filter("meta"));
+      let found = null;
+      nodes.each((_, node) => {
+        if (found || (!String(node.tagName || "").toLowerCase().startsWith("meta") && isExcludedHere(node))) return;
+        const el = $(node);
+        for (const attribute of attributes) {
+          const value = el.attr(attribute);
+          if (value != null && String(value).trim()) { found = cleanText(String(value), 180); break; }
+        }
+        if (!found && !/^(?:meta|link)$/i.test(String(node.tagName || ""))) found = readProductAttributeNodeValue($, node);
+      });
+      if (found) return found;
+    }
+    return null;
+  };
+
+  let sku = normalizeIdentifierValue(readFirst([
+    "[itemprop='sku']", "[data-sku]", "[data-product-sku]", "[data-product-code]", "[data-article-number]", "meta[name='sku']",
+    "meta[property='product:retailer_item_id']", "meta[property='product:sku']", "meta[name='product_code']", "meta[name='productcode']"
+  ]), "sku");
+  let gtin = normalizeIdentifierValue(readFirst([
+    "[itemprop='gtin']", "[itemprop='gtin8']", "[itemprop='gtin12']", "[itemprop='gtin13']", "[itemprop='gtin14']",
+    "[data-ean]", "[data-gtin]", "[data-barcode]", "meta[name='ean']", "meta[name='gtin']",
+    "meta[name='barcode']", "meta[property='product:gtin13']", "meta[property='product:ean']", "meta[name='product:ean']"
+  ]), "gtin");
+  let mpn = readFirst(["[itemprop='mpn']", "meta[name='mpn']", "meta[property='product:mpn']"]);
+
+  let availabilityRaw = readFirst([
+    "[itemprop='availability']", "[data-availability]", "[data-stock-status]",
+    "[data-testid*='availability' i]", "[data-testid*='stock' i]",
+    "[class*='product-availability' i]", "[class*='availability-status' i]", "[class*='stock-status' i]",
+    "[class*='product-stock' i]", "[class*='stock-availability' i]", "[class*='stock-info' i]",
+    "meta[property='product:availability']", "meta[name='availability']"
+  ], ["href", "content", "value", "data-availability", "data-stock-status", "data-value"]);
+  if (availabilityRaw && !normalizeAvailabilityStatus(availabilityRaw)) availabilityRaw = null;
+
+  let stockQuantity = null;
+  let stockSource = null;
+  const stockQuantitySelectors = [
+    "[itemprop='inventoryLevel'] [itemprop='value']", "[itemprop='inventoryLevel']", "[data-stock-quantity]", "[data-stock-count]",
+    "[data-inventory-quantity]", "[data-available-quantity]", "[data-quantity-in-stock]", "meta[name='stock-quantity']"
+  ];
+  const rawStockQuantity = readFirst(stockQuantitySelectors, ["content", "value", "data-stock-quantity", "data-stock-count", "data-inventory-quantity", "data-available-quantity"]);
+  if (rawStockQuantity) {
+    const match = rawStockQuantity.replace(/\s/g, "").match(/^(\d{1,7})(?:[,.]0+)?(?:ks|pcs|pieces?)?$/i);
+    if (match) { stockQuantity = Number(match[1]); stockSource = "dom:explicit-stock-quantity"; }
+  }
+
+  for (const pair of pairs) {
+    const label = normalizePhysicalLabel(pair.label).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!sku && /(?:^|\b)(?:sku|product sku|kod produktu|kod tovaru|cislo produktu|cislo vyrobku|product code|article number|article no|item number|item no|product number|catalog(?:ue)? number|part number|p n|artikelnummer|kod artiklu|cislo artiklu)(?:\b|$)/.test(label) && !/(?:ean|gtin|barcode)/.test(label)) {
+      sku = normalizeIdentifierValue(pair.value, "sku");
+    }
+    if (!gtin && /(?:^|\b)(?:ean|gtin|upc|barcode|bar code|ciarovy kod|carovy kod)(?:\b|$)/.test(label)) {
+      gtin = normalizeIdentifierValue(pair.value, "gtin");
+    }
+    if (!mpn && /^(?:mpn|manufacturer part number|vyrobne cislo|cislo dielu)$/.test(label)) mpn = cleanText(pair.value, 120);
+
+    const isAvailabilityLabel = /^(?:dostupnost|availability|stock status|stav skladu|stav zasob|skladom)$/.test(label);
+    // Visible PDP stock copy is more useful than a generic Schema.org URI;
+    // prefer it so an explicit "Skladom 8 ks" can supply both status and count.
+    if (isAvailabilityLabel && (!availabilityRaw || /schema\.org\//i.test(availabilityRaw))) availabilityRaw = pair.value;
+
+    if (stockQuantity == null && /^(?:stock quantity|available quantity|quantity in stock|inventory quantity|inventory level|stock level|pocet kusov skladom|mnozstvo skladom|dostupne mnozstvo)$/.test(label)) {
+      const match = pair.value.replace(/\s/g, "").match(/^(\d{1,7})(?:[,.]0+)?(?:ks|pcs|pieces?)?$/i);
+      if (match) { stockQuantity = Number(match[1]); stockSource = "dom:labelled-stock-quantity"; }
+    }
+    if (stockQuantity == null && isAvailabilityLabel) {
+      const stockMatch = pair.value.match(/(?:skladom|in stock|available)\s*[:,-]?\s*(\d{1,7})\s*(?:ks|pcs|pieces?)/i);
+      if (stockMatch) { stockQuantity = Number(stockMatch[1]); stockSource = "dom:availability-quantity"; }
+    }
+
+    // A generic "Weight/Hmotnosť" row is accepted only as a labelled value
+    // inside the product detail's specification area and never inside a
+    // shipping/logistics/package subtree. Explicit product/net labels remain
+    // valid wherever they occur in the product page.
+    if (/(?:hmotnost|vaha|weight|massa|gewicht|waga|poids|peso)/.test(label)) {
+      const explicitProductWeight = /(?:product|produktu|netto|net weight)/.test(label);
+      const shippingContext = isShippingProductAttributeContext($, pair.node) || /(?:balen|package|shipping|gross|brutto|preprav|versand|verpack)/.test(label);
+      const genericWeightInSpecs = /^(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)$/.test(label) && !shippingContext;
+      if ((explicitProductWeight && !shippingContext) || genericWeightInSpecs) {
+        // Preserve the actual page label as evidence while explicitly classifying
+        // an unqualified technical-specification row as product weight.
+        const physicalLabel = genericWeightInSpecs ? "Hmotnosť produktu" : pair.label;
+        const physical = extractPhysicalSpecsFromDom($, root);
+        applyPhysicalSpecPair(physical, physicalLabel, pair.value, "dom:product-attribute-row");
+        pair.physical = physical;
+      }
+    }
+
+    if (!availabilityRaw) {
+      const stockMatch = pair.value.match(/(?:skladom|in stock|dostupne)\s*[:,-]?\s*(\d{1,7})\s*(?:ks|pcs|pieces?)/i);
+      if (stockMatch) { stockQuantity = Number(stockMatch[1]); stockSource = "dom:availability-quantity"; availabilityRaw = pair.value; }
+    }
+  }
+
+  // A quantity explicitly embedded in the availability line is also a valid
+  // stock count (for example "Skladom 4 ks"). Do not derive counts from vague
+  // phrases such as "available" or from page-wide text.
+  if (stockQuantity == null && availabilityRaw) {
+    const quantityMatch = availabilityRaw.match(/(?:skladom|in stock|available)?\s*[:,-]?\s*(\d{1,7})\s*(?:ks|pcs|pieces?)/i) ||
+      availabilityRaw.match(/(?:skladom|in stock|available)\s+(\d{1,7})/i);
+    if (quantityMatch) { stockQuantity = Number(quantityMatch[1]); stockSource = "dom:availability-quantity"; }
+  }
+  // Explicit stock quantity is useful availability evidence when the shop does
+  // not expose a separate status string; zero means out of stock, positive means
+  // stock exists. A status without a count is never converted into a quantity.
+  if (!availabilityRaw && stockQuantity != null) availabilityRaw = stockQuantity > 0 ? "Skladom" : "Nedostupné";
+  const availabilityInfo = normalizeAvailabilityStatus(availabilityRaw);
+  const physicalSpecs = extractPhysicalSpecsFromDom($, root);
+  for (const pair of pairs) {
+    if (pair.physical?.productWeight > 0 && !(physicalSpecs.productWeight > 0)) {
+      Object.assign(physicalSpecs, pair.physical);
+    }
+  }
+  if (stockQuantity != null && stockSource == null) stockSource = "dom:explicit-stock-quantity";
+
+  return {
+    ...(sku ? { sku } : {}),
+    ...(gtin ? { gtin } : {}),
+    ...(mpn ? { mpn } : {}),
+    ...physicalSpecs,
+    ...(availabilityInfo ? {
+      availability: availabilityInfo.availability,
+      availabilityText: availabilityInfo.availabilityText,
+      availabilitySource: availabilityInfo.availabilityText === availabilityRaw ? "dom:product-availability" : "dom:product-availability-normalized"
+    } : {}),
+    ...(stockQuantity != null ? { stockQuantity, stockQuantityUnit: "ks", stockSource } : {})
+  };
+}
+
+export function extractProductPageAttributesFromHtml(html, pageUrl, existingRoot = null) {
+  const $ = existingRoot || loadHtml(html);
+  const productArea = $("main").first().length ? $("main").first() : $("body");
+  return extractCurrentProductPageAttributes($, pageUrl, productArea);
 }
 
 function extractProductFromJsonLd(node, pageUrl) {
@@ -2111,13 +2655,17 @@ function extractProductFromJsonLd(node, pageUrl) {
     priceBasis: offer.priceBasis || "offer-price",
     currency: offer.currency,
     availability: offer.availability,
+    availabilityText: offer.availabilityText || offer.availability || null,
+    availabilitySource: offer.availabilitySource || null,
+    ...(offer.stockQuantity != null ? { stockQuantity: offer.stockQuantity, stockQuantityUnit: offer.stockQuantityUnit || "ks", stockSource: offer.stockSource || null } : {}),
     unit: offer.unit || null,
     ...extractPackageMeasure(node, offer),
     ...extractPhysicalSpecsFromStructured(node, offer),
     url: productUrl,
     image,
     ...extractProductIdentifiers(node),
-    source: "json-ld"
+    source: "json-ld",
+    priceExtractionEvidence: offer.priceExtractionEvidence || null
   };
 }
 
@@ -2279,16 +2827,26 @@ function extractProductsFromJsonLdOfferVariants(node, pageUrl) {
     const inferredNetVolume = packageMeasure && ["l", "ml"].includes(packageMeasure.packageUnit)
       ? (packageMeasure.packageUnit === "ml" ? packageMeasure.packageQuantity / 1000 : packageMeasure.packageQuantity)
       : null;
+    const variantAvailabilityRaw = offer.availability || itemOffered.availability || node.availability || null;
+    const variantAvailability = normalizeAvailabilityStatus(variantAvailabilityRaw);
+    const variantInventoryRaw = offer.inventoryLevel?.value ?? offer.inventoryLevel?.valueText ??
+      offer.stockQuantity ?? offer.availableQuantity ?? offer.inventoryQuantity ?? null;
+    const variantInventoryMatch = variantInventoryRaw == null ? null : String(variantInventoryRaw).replace(/\s/g, "").match(/^(\d{1,7})(?:[,.]0+)?(?:ks|pcs|pieces?)?$/i);
+    const variantStockQuantity = variantInventoryMatch ? Number(variantInventoryMatch[1]) : null;
 
     records.push({
       name,
       price,
+      priceExtractionEvidence: { method: "json-ld-variant-offer", rawPrice: offer.price ?? offer.lowPrice ?? null, currency },
       packagePrice: price,
       currency,
       priceBasis: "json-ld-variant-offer",
       unitPrice,
       unitPriceUnit: unitPriceUnit || null,
-      availability: offer.availability || null,
+      availability: variantAvailability?.availability || variantAvailabilityRaw,
+      availabilityText: variantAvailability?.availabilityText || variantAvailabilityRaw,
+      availabilitySource: variantAvailabilityRaw ? "json-ld:variant-offer.availability" : null,
+      ...(variantStockQuantity != null ? { stockQuantity: variantStockQuantity, stockQuantityUnit: "ks", stockSource: "json-ld:variant-offer.inventoryLevel" } : {}),
       unit: extractStructuredUnit(offer),
       ...physicalSpecs,
       ...(inferredNetWeight != null && !(Number(physicalSpecs.productWeight) > 0) ? {
@@ -2550,7 +3108,9 @@ function extractMicrodataProducts($, pageUrl) {
     if (brandNode.length) microdataIdentifiers.brand = cleanText(brandNode.attr("content") || brandNode.text(), 160);
 
     products.push({
-      name, price, currency, availability: null, unit, ...packageMeasure, ...extractPhysicalSpecsFromDom($, root), ...extractPhysicalSpecsFromStructured({
+      name, price,
+      priceExtractionEvidence: { method: "microdata-itemprop-price", rawPrice: rawPrice == null ? null : String(rawPrice), currency: currency || null },
+      currency, availability: null, unit, ...packageMeasure, ...extractPhysicalSpecsFromDom($, root), ...extractPhysicalSpecsFromStructured({
         weight: { value: weightNode.attr("content") || weightNode.text(), unitCode: weightNode.attr("data-unit-code"), unitText: weightNode.attr("data-unit-text") },
         width: { value: root.find("[itemprop='width']").first().attr("content") || root.find("[itemprop='width']").first().text(), unitCode: root.find("[itemprop='width']").first().attr("unitCode"), unitText: root.find("[itemprop='width']").first().attr("data-unit-text") },
         height: { value: root.find("[itemprop='height']").first().attr("content") || root.find("[itemprop='height']").first().text(), unitText: root.find("[itemprop='height']").first().attr("data-unit-text") },
@@ -2627,6 +3187,7 @@ function extractMetadataProduct($, pageUrl) {
   return [{
     name,
     price,
+    priceExtractionEvidence: { method: "product-price-metadata", rawPrice: rawPrice == null ? null : String(rawPrice), currency: currency || null },
     currency,
     availability: null,
     unit: extractStructuredUnit({
@@ -2763,6 +3324,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     output.push({
       name: cleanText(name, 300),
       price,
+      priceExtractionEvidence: { method: "embedded-json", rawPrice: rawPrice == null ? null : String(rawPrice), currency: normalizeCurrency(defaultPrice?.currencyCode || defaultPrice?.currency || value.priceCurrency || value.currency) },
       currency: normalizeCurrency(
         defaultPrice?.currencyCode ||
         defaultPrice?.currency ||
@@ -2862,6 +3424,7 @@ function extractProductsFromAppData(data, pageUrl) {
   const productRecord = {
     name,
     price,
+    priceExtractionEvidence: { method: "embedded-app-data", rawPrice: rawPrice == null ? null : String(rawPrice), currency },
     packagePrice: price,
     currency,
     priceType: "bežná predajná cena",
@@ -3003,6 +3566,24 @@ function isExcludedProductArea($, element) {
   return false;
 }
 
+function isExcludedProductAreaWithin($, element, scope) {
+  const stopNode = $(scope).get(0);
+  let node = $(element);
+  for (let depth = 0; depth < 10 && node.length; depth++) {
+    const marker = [node.attr("class"), node.attr("id"), node.attr("data-testid"),
+      node.attr("aria-label"), node.attr("role")].filter(Boolean).join(" ").toLowerCase();
+    if (/(?:recommend|related|similar|suggest|popular|top[-_ ]?10|best[-_ ]?seller|bestseller|sidebar|side[-_ ]?bar|cross[-_ ]?sell|upsell|promo|advert|widget)/i.test(marker)) return true;
+    const ownTag = String(node[0]?.tagName || "").toLowerCase();
+    const ownHeading = /^(?:h1|h2|h3|h4|h5)$/.test(ownTag) ? node.text() : "";
+    const directHeading = node.children("h1,h2,h3,h4,h5").first().text();
+    const heading = `${ownHeading} ${directHeading}`.toLowerCase();
+    if (/(?:top\s*10|top\s*produk|odpor[uú]čan|s[uú]visiaci|podobn[eé]|najpred[aá]van)/i.test(heading)) return true;
+    if (stopNode && node.get(0) === stopNode) break;
+    node = node.parent();
+  }
+  return false;
+}
+
 function isLikelyProductContainer($, element) {
   const node = $(element);
 
@@ -3136,32 +3717,94 @@ export function selectPrimaryCurrencyPrice(value) {
   };
 }
 
-function extractCardPrice($, container) {
+function extractCardPriceDetails($, container) {
   const selectors = [
-    "[itemprop='price']", "[data-price]", ".price-current",
-    ".current-price", ".product-price", ".product__price",
-    ".product-card__price", ".price-value", ".price"
+    "[itemprop='price']",
+    "[data-testid*='price-current' i]",
+    ".price-current", ".current-price", "[class*='price-current' i]",
+    "[class*='price-default' i]", ".product-card__price-new",
+    ".product-price", ".product__price", ".product-card__price",
+    ".price-value", "[data-price]", ".price"
   ];
-  const cardText = container.text();
-  const primary = selectPrimaryCurrencyPrice(cardText);
+
+  const nonSellingMarker = /(?:old|original|was|unit|per-unit|reference|strike|coupon|voucher|shipping|delivery|installment)/i;
+  const cardText = normalizeWhitespace(container.text());
 
   for (const selector of selectors) {
     const elements = container.find(selector).toArray();
     for (const node of elements) {
+      if (isHiddenProductPriceNode($, node) || isExcludedProductArea($, node)) continue;
       const element = $(node);
-      const raw = element.attr("content") || element.attr("data-price") ||
-        element.attr("value") || element.text();
-      const price = parsePrice(raw);
-      if (price == null) continue;
-      const rawHasCurrency = /(?:EUR|CZK|PLN|HUF|GBP|USD|CHF|€|Kč|zł|Ft|£|\$)/i.test(String(raw));
-      if (rawHasCurrency && (!primary || price === primary.price)) return price;
-      // Bare numeric price attributes are accepted only when they match the
-      // selected currency-qualified selling price, never a model/spec number.
-      if (!rawHasCurrency && primary && price === primary.price) return price;
+      const marker = [element.attr("class"), element.attr("id"), element.attr("data-testid"), element.attr("aria-label")]
+        .filter(Boolean).join(" ").toLowerCase();
+      if (nonSellingMarker.test(marker)) continue;
+
+      const raw = element.attr("content") || element.attr("data-price") || element.attr("value") || element.text();
+      if (!raw || !String(raw).trim()) continue;
+
+      // A currency-qualified value inside a semantic selling-price element is
+      // stronger evidence than a number assembled from the entire card text.
+      // The latter can contain model numbers, weights, dimensions or other
+      // metadata adjacent to the visible price.
+      const direct = selectPrimaryCurrencyPrice(raw);
+      if (direct && direct.currency && !direct.unitReferencePrice) {
+        return {
+          ...direct,
+          evidence: {
+            method: "explicit-price-element",
+            selector,
+            marker: marker.slice(0, 160),
+            rawValue: String(raw).slice(0, 240),
+            scopeText: normalizeWhitespace(element.parent().text()).slice(0, 320)
+          }
+        };
+      }
+
+      // Some shops split amount and currency into adjacent elements. In that
+      // case accept the closest parent only when its currency-qualified price
+      // exactly matches the numeric amount stored on the semantic price node.
+      const bareAmount = parsePrice(raw);
+      if (bareAmount != null && !/(?:EUR|CZK|PLN|HUF|GBP|USD|CHF|€|Kč|zł|Ft|£|\$)/i.test(String(raw))) {
+        let scope = element.parent();
+        for (let depth = 0; depth < 3 && scope.length; depth++, scope = scope.parent()) {
+          const scopeText = normalizeWhitespace(scope.text());
+          if (!scopeText || scopeText.length > 700) continue;
+          const scoped = selectPrimaryCurrencyPrice(scopeText);
+          if (scoped && Math.abs(scoped.price - bareAmount) <= 0.01 && scoped.currency) {
+            return {
+              ...scoped,
+              evidence: {
+                method: "semantic-price-amount-plus-neighbour-currency",
+                selector,
+                marker: marker.slice(0, 160),
+                rawValue: String(raw).slice(0, 240),
+                scopeText: scopeText.slice(0, 320)
+              }
+            };
+          }
+        }
+      }
     }
   }
 
-  return primary ? primary.price : null;
+  // Last resort for stores without semantic price elements. Only values that
+  // explicitly include a recognized currency can be selected; bare numbers,
+  // weights and technical attributes are never promoted to a selling price.
+  const fallback = selectPrimaryCurrencyPrice(cardText);
+  return fallback ? {
+    ...fallback,
+    evidence: {
+      method: "currency-qualified-card-text-fallback",
+      selector: null,
+      marker: null,
+      rawValue: cardText.slice(0, 320),
+      scopeText: cardText.slice(0, 320)
+    }
+  } : null;
+}
+
+function extractCardPrice($, container) {
+  return extractCardPriceDetails($, container)?.price ?? null;
 }
 
 function extractPriceFromProductCardText(value) {
@@ -3281,12 +3924,9 @@ function extractLinkedProductCardProducts($, pageUrl, existingProducts = []) {
         distinctTitles.size <= 1 && productDestinations.size <= 1 &&
         /(?:EUR|CZK|PLN|HUF|GBP|USD|CHF|€|Kč|zł|Ft|£|\$)/i.test(candidateText)
       ) {
-        const explicitCardPrice = extractCardPrice($, card);
+        const explicitCardPrice = extractCardPriceDetails($, card);
         const selectedTextPrice = selectPrimaryCurrencyPrice(candidateText);
-        const parsed = selectedTextPrice &&
-          (explicitCardPrice == null || explicitCardPrice === selectedTextPrice.price)
-          ? selectedTextPrice
-          : null;
+        const parsed = explicitCardPrice || selectedTextPrice;
 
         if (parsed && titleText.length >= 3 && titleText.length <= 250 &&
             !isGenericProductLinkLabel(titleText)) {
@@ -3330,6 +3970,10 @@ function extractLinkedProductCardProducts($, pageUrl, existingProducts = []) {
     products.push({
       name: best.name,
       price: best.parsed.price,
+      priceExtractionEvidence: best.parsed.evidence || {
+        method: "linked-card-currency-text",
+        rawValue: best.cardText.slice(0, 320)
+      },
       currency: best.parsed.currency,
       priceType: best.parsed.hasReferencePrice ? "akciová cena bez kupónu" : "bežná predajná cena",
       couponPriceDetected: Boolean(best.parsed.couponPriceDetected),
@@ -3573,8 +4217,8 @@ function extractHtmlCardProducts($, pageUrl) {
     if (hasMultipleProductDestinations($, container, pageUrl)) continue;
 
     const name = extractCardName($, container);
-    const price = extractCardPrice($, container);
-    const priceDetails = selectPrimaryCurrencyPrice(container.text());
+    const priceDetails = extractCardPriceDetails($, container);
+    const price = priceDetails?.price ?? null;
 
     if (!name || price == null) {
       continue;
@@ -3646,7 +4290,7 @@ function extractHtmlCardProducts($, pageUrl) {
       }
     }
 
-    const currency = normalizeCurrency(
+    const currency = priceDetails?.currency || normalizeCurrency(
       container.text().match(
         /EUR|CZK|PLN|HUF|GBP|USD|CHF|€|Kč|zł|Ft|£|\$/i
       )?.[0]
@@ -3655,6 +4299,7 @@ function extractHtmlCardProducts($, pageUrl) {
     products.push({
       name,
       price,
+      priceExtractionEvidence: priceDetails?.evidence || null,
       packagePrice: price,
       unitPrice: priceDetails?.unitPrice ?? null,
       unitPriceUnit: priceDetails?.unitPriceUnit || null,
@@ -3774,6 +4419,7 @@ function extractPrimaryProductBuyBox($, pageUrl) {
   return [{
     name: title,
     price: priceDetails.price,
+    priceExtractionEvidence: { method: "primary-product-buybox", rawPrice: priceText.slice(0, 320), currency: priceDetails.currency || null },
     packagePrice: priceDetails.price,
     currency: priceDetails.currency,
     priceType: priceDetails.hasReferencePrice ? "akciová cena" : "bežná predajná cena",
@@ -3914,6 +4560,12 @@ function extractDetailPageFallback($, pageUrl) {
   // an explicit current-price element, never an arbitrary number from specs.
   let price = match ? parsePrice(match[1]) : null;
   let currency = match ? normalizeCurrency(match[2]) : null;
+  let priceExtractionEvidence = match ? {
+    method: "labelled-product-price",
+    label: match[0].slice(0, 160),
+    rawValue: match[1],
+    currency: currency || null
+  } : null;
   let priceType = "bežná predajná cena";
   let couponPriceDetected = false;
 
@@ -3926,6 +4578,7 @@ function extractDetailPageFallback($, pageUrl) {
     if (normalPriceCandidate) {
       price = normalPriceCandidate.price;
       currency = normalPriceCandidate.currency;
+      priceExtractionEvidence = { method: "4home-normal-price", rawValue: normalPriceText.slice(0, 240), currency: currency || null };
       priceType = normalPriceCandidate.hasReferencePrice ? "akciová cena bez kupónu" : "bežná predajná cena";
       couponPriceDetected = $(".pricing-wrap .cupon-info").length > 0;
     }
@@ -3940,6 +4593,7 @@ function extractDetailPageFallback($, pageUrl) {
       if (selectedVariantPrice) {
         price = selectedVariantPrice.price;
         currency = selectedVariantPrice.currency;
+        priceExtractionEvidence = { method: "selected-variant-price-element", rawValue: selectedVariantPriceNode.text().slice(0, 240), currency: currency || null };
         priceType = selectedVariantPrice.hasReferencePrice ? "akciová cena bez kupónu" : "bežná predajná cena";
       }
     }
@@ -4004,7 +4658,13 @@ function extractDetailPageFallback($, pageUrl) {
         // candidate must still be in <main>, on a product-detail URL, outside
         // recommendation areas, and expose a semantic price element.
         if (titleDistance === 999 && !(pageHasPurchaseSignal && inMain && semantic && looksLikeProductUrl)) return;
-        candidates.push({ parsed, distance: titleDistance, productAction, semantic, inMain, textLength: chosenScopeText.length });
+        candidates.push({
+          parsed, distance: titleDistance, productAction, semantic, inMain,
+          textLength: chosenScopeText.length,
+          rawValue: String(raw).slice(0, 240),
+          selector,
+          scopeText: chosenScopeText.slice(0, 320)
+        });
       });
     }
     candidates.sort((a, b) =>
@@ -4016,6 +4676,13 @@ function extractDetailPageFallback($, pageUrl) {
       const best = candidates[0].parsed;
       price = best.price;
       currency = best.currency;
+      priceExtractionEvidence = {
+        method: "semantic-price-node-or-bounded-ancestor",
+        rawValue: best.rawValue || null,
+        selector: best.selector || null,
+        scopeText: best.scopeText || null,
+        currency: best.currency || null
+      };
       priceType = best.hasReferencePrice ? "akciová cena bez kupónu" : "bežná predajná cena";
       couponPriceDetected = Boolean(best.couponPriceDetected);
     }
@@ -4039,8 +4706,13 @@ function extractDetailPageFallback($, pageUrl) {
   return [{
     name: h1,
     price,
+    priceExtractionEvidence: priceExtractionEvidence || {
+      method: "product-detail-price-fallback",
+      rawValue: null,
+      currency: currency || null
+    },
     currency,
-    availability: /skladom|na sklade|in stock/i.test(bodyText) ? "InStock" : null,
+    availability: null,
     unit: "neuvedené",
     url: pageUrl,
     image: productImage,
@@ -4304,19 +4976,26 @@ function inferPackageMeasureFromUnitPrice(product) {
 function deduplicateProducts(products) {
   const result = [];
   const byIdentity = new Map();
-  const sourceRank = source => {
-    const value = String(source || "");
+  const sourceRank = item => {
+    const value = String(item?.source || "");
+    const evidence = item?.priceExtractionEvidence || {};
     // The visible, selected purchase offer is the authoritative current price
     // for the exact package selected in the main buy box.
-    if (value.includes("primary-product-buybox")) return 110;
-    if (value.includes("json-ld")) return 100;
-    if (value.includes("microdata")) return 95;
-    if (value.includes("embedded-json")) return 90;
-    if (value.includes("html-card")) return 80;
-    if (value.includes("linked-product-card")) return 75;
-    if (value.includes("detail-page-fallback")) return 65;
-    if (value.includes("metadata")) return 40;
-    return 10;
+    let rank = value.includes("primary-product-buybox") ? 150 :
+      value.includes("json-ld") ? 100 :
+      value.includes("microdata") ? 95 :
+      value.includes("embedded-json") ? 90 :
+      value.includes("html-card") ? 80 :
+      value.includes("linked-product-card") ? 75 :
+      value.includes("detail-page-fallback") ? 65 :
+      value.includes("metadata") ? 40 : 10;
+
+    // A visible currency-qualified amount in a semantic current-price element
+    // is stronger than a conflicting value copied into broad structured data.
+    // Do not apply this bonus to generic whole-page text fallbacks.
+    if (evidence.method === "explicit-price-element") rank += 35;
+    if (evidence.method === "semantic-price-node-or-bounded-ancestor" && evidence.selector) rank += 35;
+    return rank;
   };
 
   for (const rawProduct of products) {
@@ -4355,12 +5034,15 @@ function deduplicateProducts(products) {
     if (existingIndex !== undefined) {
       const existing = result[existingIndex];
       const previousSource = existing.source || "";
-      if (sourceRank(product.source) > sourceRank(existing.source)) {
+      if (sourceRank(product) > sourceRank(existing)) {
         const merged = { ...existing, ...product, ...mergePhysicalSpecFields(product, existing) };
         if (!product.currency && existing.currency) merged.currency = existing.currency;
         if ((!product.unit || product.unit === "neuvedené") && existing.unit) merged.unit = existing.unit;
         if (!product.image && existing.image) merged.image = existing.image;
         if (!product.availability && existing.availability) merged.availability = existing.availability;
+        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource"]) {
+          if (product[field] == null && existing[field] != null) merged[field] = existing[field];
+        }
         for (const field of ["unitPrice", "unitPriceUnit", "packagePrice", "packageQuantity", "packageUnit", "packageLabel", "packageMeasureSource", "sku", "gtin", "mpn", "productId"]) {
           if (product[field] == null && existing[field] != null) merged[field] = existing[field];
         }
@@ -4382,6 +5064,9 @@ function deduplicateProducts(products) {
         if ((!existing.unit || existing.unit === "neuvedené") && product.unit && product.unit !== "neuvedené") existing.unit = product.unit;
         if (!existing.image && product.image) existing.image = product.image;
         if (!existing.availability && product.availability) existing.availability = product.availability;
+        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource"]) {
+          if (existing[field] == null && product[field] != null) existing[field] = product[field];
+        }
         for (const field of ["unitPrice", "unitPriceUnit", "packagePrice", "packageQuantity", "packageUnit", "packageLabel", "packageMeasureSource", "sku", "gtin", "mpn", "productId"]) {
           if (existing[field] == null && product[field] != null) existing[field] = product[field];
         }
@@ -4545,6 +5230,7 @@ function extractAstroProductIslandFallback($, pageUrl) {
   return [{
     name: productName,
     price: best.price,
+    priceExtractionEvidence: { method: "astro-product-main-islands", rawPriceCandidates: [...counts.values()].map(item => ({ price: item.price, currency: item.currency, count: item.count, semantic: Boolean(item.semantic) })).slice(0, 12) },
     packagePrice: best.price,
     currency: best.currency,
     priceType: "bežná predajná cena",
@@ -4590,12 +5276,18 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
     // DOM-only physical specifications must still be read before this fast return.
     const productArea = $("main").first().length ? $("main").first() : $("body");
     const pageTitle = cleanProductTitle(getPrimaryProductTitleNode($).text() || $("h1").first().text());
-    const pageText = normalizeWhitespace(productArea.text());
-    const pageSku = pageText.match(/\b(?:[A-Z0-9]{2,10}[.-]){1,3}[A-Z0-9]{2,10}\b/i)?.[0] || null;
+    // The first SKU-like string on an ecommerce page can belong to a child
+    // component (for example an IKEA shelf or clothes rail). Resolve the
+    // current variant from the product URL, and only accept it if it matches
+    // exactly one structured JSON-LD variant.
+    const pageSku = resolveCurrentVariantSkuFromPage(jsonLdVariantSet, pageUrl, $, productArea);
     const pagePhysicalSpecs = extractPhysicalSpecsFromDom($, productArea);
-    const variantProducts = enrichJsonLdVariantsWithPhysicalSpecs(
-      deduplicateProducts(jsonLdVariantSet), pageUrl, pageTitle, pageSku, pagePhysicalSpecs
-    ).slice(0, MAX_PRODUCTS_PER_PAGE);
+    const variantProducts = applyCurrentPageMetadataDimensionFallback(
+      enrichJsonLdVariantsWithPhysicalSpecs(
+        deduplicateProducts(jsonLdVariantSet), pageUrl, pageTitle, pageSku, pagePhysicalSpecs
+      ).slice(0, MAX_PRODUCTS_PER_PAGE),
+      $, pageUrl
+    );
     return {
       products: variantProducts,
       diagnostics: {
@@ -4706,7 +5398,9 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
     const productArea = $("main").first().length ? $("main").first() : $("body");
     const bodyMeasure = extractPackageMeasureFromDom($, productArea);
     const bodyPhysicalSpecs = extractPhysicalSpecsFromDom($, productArea);
-    if ((bodyMeasure && (bodyMeasure.packageQuantity != null || Array.isArray(bodyMeasure.packageOptions))) || Object.keys(bodyPhysicalSpecs).length) {
+    const pageAttributes = extractCurrentProductPageAttributes($, pageUrl, productArea);
+    const shouldEnrichPageAttributes = primaryPageProductIndexes.size > 0 || products.length === 1;
+    if (((bodyMeasure && (bodyMeasure.packageQuantity != null || Array.isArray(bodyMeasure.packageOptions))) || Object.keys(bodyPhysicalSpecs).length || Object.keys(pageAttributes).length) && shouldEnrichPageAttributes) {
       products = products.map((product, index) => {
         // When the page identity is available, update only the matching main
         // product record(s), never unrelated recommendations on the page.
@@ -4714,6 +5408,20 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
         return {
           ...product,
           ...mergePhysicalSpecFields(product, bodyPhysicalSpecs),
+          ...mergePhysicalSpecFields(product, pageAttributes),
+          ...(pageAttributes.sku && !product.sku ? { sku: pageAttributes.sku } : {}),
+          ...(pageAttributes.gtin && !product.gtin ? { gtin: pageAttributes.gtin } : {}),
+          ...(pageAttributes.mpn && !product.mpn ? { mpn: pageAttributes.mpn } : {}),
+          ...(pageAttributes.availability ? {
+            availability: pageAttributes.availability,
+            availabilityText: pageAttributes.availabilityText || pageAttributes.availability,
+            availabilitySource: pageAttributes.availabilitySource || null
+          } : {}),
+          ...(pageAttributes.stockQuantity != null ? {
+            stockQuantity: pageAttributes.stockQuantity,
+            stockQuantityUnit: pageAttributes.stockQuantityUnit || "ks",
+            stockSource: pageAttributes.stockSource || null
+          } : {}),
           ...(bodyMeasure?.packageQuantity != null ? {
             packageQuantity: bodyMeasure.packageQuantity,
             packageUnit: bodyMeasure.packageUnit,
@@ -4783,6 +5491,12 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
       return !(weakHtmlSource && currencyCount <= maxOutliers);
     });
   }
+
+  // Last, page-identity-safe fallback for sites that publish the size tuple
+  // in the product title/metadata while leaving the dimension accordion out of
+  // the raw HTML response. This is applied after all normal extractors and
+  // variant detection so only the active product receives the fallback.
+  products = applyCurrentPageMetadataDimensionFallback(products, $, pageUrl);
 
   return {
     products: products.slice(
@@ -5048,19 +5762,151 @@ function applyDetectedSizeVariant(product, variantLinks) {
 // Enrich a JSON-LD variant fast-path with page-level physical specifications.
 // The optimization preserves explicit variant records, but must not bypass
 // DOM-only dimensions and multi-parcel data exposed outside JSON-LD.
+function resolveCurrentVariantSkuFromUrl(variants, pageUrl) {
+  let pathname = "";
+  try { pathname = new URL(pageUrl).pathname; } catch { return null; }
+  const candidates = [...pathname.matchAll(/(?:^|[^a-z0-9])s?(\d{8,14})(?=$|[^a-z0-9])/gi)]
+    .map(match => String(match[1] || "").replace(/[^a-z0-9]/gi, "").toLowerCase())
+    .filter(Boolean);
+  const normalizedCandidates = [...new Set(candidates)];
+  const matchingSkus = new Set();
+  for (const candidate of normalizedCandidates) {
+    for (const product of variants) {
+      const sku = String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+      if (sku && sku === candidate) matchingSkus.add(sku);
+    }
+  }
+  return matchingSkus.size === 1 ? [...matchingSkus][0] : null;
+}
+
+// Some product pages expose assembled dimensions in the rendered measurement
+// accordion, but omit that accordion from the first raw HTTP response. IKEA
+// still publishes the active product's 3D size in its title / OG title / meta
+// description. Use that tuple only as a fallback and attach it only to the
+// product whose SKU is encoded in the current detail URL (or to a single,
+// unambiguous product record). Never copy the active page's dimensions to
+// sibling variants or unrelated recommendation cards.
+function extractProductPageMetadataDimensions($) {
+  const candidates = [];
+  const add = (source, value) => {
+    const text = cleanText(String(value || ""), 1200);
+    if (text) candidates.push({ source, text });
+  };
+
+  try {
+    const heading = getPrimaryProductTitleNode($);
+    add("heading", heading.text());
+    heading.find("[aria-label]").each((_, element) => add("heading-aria-label", $(element).attr("aria-label")));
+  } catch {}
+  try { add("og-title", $("meta[property='og:title']").first().attr("content")); } catch {}
+  try { add("twitter-title", $("meta[name='twitter:title']").first().attr("content")); } catch {}
+  try { add("document-title", $("title").first().text()); } catch {}
+  try { add("description", $("meta[name='description']").first().attr("content")); } catch {}
+  try { add("og-description", $("meta[property='og:description']").first().attr("content")); } catch {}
+
+  for (const candidate of candidates) {
+    const parsed = extractDimensionVariant(candidate.text);
+    if (!parsed || parsed.values.length !== 3) continue;
+    return {
+      ...parsed.dimensions,
+      raw: parsed.size,
+      source: `dom:product-page-metadata-size:${candidate.source}`
+    };
+  }
+  return null;
+}
+
+function applyCurrentPageMetadataDimensionFallback(products, $, pageUrl) {
+  if (!Array.isArray(products) || !products.length) return products;
+  const fallbackDimensions = extractProductPageMetadataDimensions($);
+  if (!fallbackDimensions) return products;
+
+  let selectedIndex = -1;
+  const currentSku = resolveCurrentVariantSkuFromUrl(products, pageUrl);
+  if (currentSku) {
+    const skuMatches = products.map((product, index) => ({ product, index }))
+      .filter(({ product }) => String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase() === currentSku);
+    if (skuMatches.length === 1) selectedIndex = skuMatches[0].index;
+  }
+
+  if (selectedIndex < 0) {
+    const pageIdentity = normalizeProductUrl(pageUrl);
+    const pageMatches = products.map((product, index) => ({ product, index }))
+      .filter(({ product }) => normalizeProductUrl(product?.url || product?.sourceUrl || "") === pageIdentity);
+    if (pageMatches.length === 1) selectedIndex = pageMatches[0].index;
+  }
+  if (selectedIndex < 0 && products.length === 1) selectedIndex = 0;
+  if (selectedIndex < 0) return products;
+
+  const output = [...products];
+  const selected = output[selectedIndex];
+  output[selectedIndex] = {
+    ...selected,
+    productDimensions: mergePhysicalDimensionInfo(selected.productDimensions, fallbackDimensions)
+  };
+  return output;
+}
+
+function resolveCurrentVariantSkuFromPage(variants, pageUrl, $, productArea) {
+  const fromUrl = resolveCurrentVariantSkuFromUrl(variants, pageUrl);
+  if (fromUrl) return fromUrl;
+
+  // Some shops keep a stable parent URL for every option. In that case use
+  // only explicit product-SKU metadata or product buy-box data attributes;
+  // never search the full page text where accessory/recommended-item SKUs can
+  // appear before the active product's SKU.
+  const candidates = new Set();
+  const addCandidate = value => {
+    const normalized = String(value || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (normalized) candidates.add(normalized);
+  };
+  const collect = collection => {
+    try {
+      collection?.each?.((_, element) => {
+        const node = $(element);
+        for (const value of [
+          node.attr("content"), node.attr("data-product-sku"), node.attr("data-sku"),
+          node.attr("value"), node.text()
+        ]) addCandidate(value);
+      });
+    } catch {}
+  };
+
+  try {
+    collect($("meta[property='product:retailer_item_id'], meta[name='sku'], meta[itemprop='sku']"));
+  } catch {}
+  try {
+    collect(productArea?.find?.("[itemprop='sku'], [data-product-sku], [data-sku], input[name='sku']"));
+  } catch {}
+
+  const matched = new Set();
+  for (const product of variants) {
+    const sku = String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (sku && candidates.has(sku)) matched.add(sku);
+  }
+  return matched.size === 1 ? [...matched][0] : null;
+}
+
 function enrichJsonLdVariantsWithPhysicalSpecs(variants, pageUrl, pageTitle, currentSku, pagePhysicalSpecs) {
   const pageUrlIdentity = normalizeProductUrl(pageUrl);
   const normalizedCurrentSku = String(currentSku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-  const skuMatchesPage = Boolean(normalizedCurrentSku && variants.some(product =>
-    String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase() === normalizedCurrentSku
-  ));
+  const skuMatches = normalizedCurrentSku
+    ? variants.map((product, index) => ({ product, index }))
+        .filter(({ product }) => String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase() === normalizedCurrentSku)
+    : [];
+  let selectedVariantIndex = skuMatches.length === 1 ? skuMatches[0].index : -1;
 
-  return variants.map(product => {
-    const productUrl = normalizeProductUrl(product?.url || product?.sourceUrl || pageUrl);
-    const productSku = String(product?.sku || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
-    const matchesCurrentPage = skuMatchesPage
-      ? productSku === normalizedCurrentSku
-      : productUrl === pageUrlIdentity;
+  // A current-page URL is a safe identity only when exactly one JSON-LD record
+  // points to it. Several offers may share the parent page URL; in that case
+  // applying one page's package breakdown to all siblings is unsafe.
+  if (selectedVariantIndex < 0) {
+    const urlMatches = variants.map((product, index) => ({ product, index }))
+      .filter(({ product }) => normalizeProductUrl(product?.url || product?.sourceUrl || "") === pageUrlIdentity);
+    if (urlMatches.length === 1) selectedVariantIndex = urlMatches[0].index;
+  }
+
+  return variants.map((product, index) => {
+    const matchesCurrentPage = index === selectedVariantIndex;
     let enriched = { ...product };
 
     if (matchesCurrentPage && pagePhysicalSpecs && typeof pagePhysicalSpecs === "object") {
@@ -5271,6 +6117,31 @@ export function extractWebsiteLinks(html, pageUrl, options = {}) {
     /\/(?:p|product|products|produkt|produkte|item|items|detail|dp)\//i.test(pathname) ||
     /\/dp\//i.test(pathname);
 
+  // A link may sit inside a visually product-like tile (image + price + title)
+  // without being a purchasable product. Do not queue known navigation,
+  // category, account or basket routes as product-detail candidates.
+  // This is intentionally segment-based: a product slug containing a word
+  // such as "category" as part of a longer word is not rejected.
+  const nonProductRouteSegments = new Set([
+    "cart", "kosik", "basket", "checkout",
+    "wishlist", "favorites", "favourites",
+    "compare", "porovnanie",
+    "account", "login", "prihlasenie", "register", "registration",
+    "search", "vyhladavanie",
+    "category", "categories", "kategoria", "kategorie", "katalog", "catalog", "catalogue",
+    "collection", "collections", "kolekcia",
+    "brand", "brands", "znacka", "manufacturer", "manufacturers",
+    "blog", "news", "kontakt", "contact"
+  ]);
+  const isClearlyNonProductRoute = pathname => {
+    const segments = String(pathname || "")
+      .split("/")
+      .map(segment => segment.trim().toLowerCase())
+      .filter(Boolean);
+    if (!segments.length) return true;
+    return segments.some(segment => nonProductRouteSegments.has(segment));
+  };
+
   // Pagination must stay inside the current listing path. Without this guard,
   // faceted category URLs such as /category/flavour?p=2 were mistaken for
   // page 2 of /category and expanded into hundreds of irrelevant crawl jobs.
@@ -5406,7 +6277,13 @@ export function extractWebsiteLinks(html, pageUrl, options = {}) {
 
       if (preferred) {
         paginationLinks.add(value);
-      } else if (isProductPath(url.pathname) || productContext) {
+      } else if (isProductPath(url.pathname)) {
+        // Explicit product routes are strong evidence. Keep them even when
+        // the store's product slug happens to contain a reserved-looking word.
+        productLinks.add(value);
+      } else if (productContext && !isClearlyNonProductRoute(url.pathname)) {
+        // Generic SEO product slugs remain supported, but category/navigation
+        // tiles can no longer be mistaken for product pages.
         productLinks.add(value);
       } else {
         otherLinks.add(value);
@@ -5864,11 +6741,36 @@ function selectDirectProductRecords(products, signals) {
   return selectMainProduct(products, signals);
 }
 
+// Category crawls visit product detail pages to refresh the exact price. A
+// detail page may expose recommendation/cross-sell records that inherit the
+// current page URL. Select the H1/URL-matching product, but keep explicit
+// JSON-LD variant groups (e.g. GymBeam flavours) intact. If the page identity
+// is too weak to choose confidently, retain the URL-matched candidates.
+export function selectPrimaryProductRecords(products, signals = {}) {
+  if (!Array.isArray(products) || !products.length) return [];
+  // Accept both the normalized signals produced internally by
+  // getProductPageSignals() and raw signals passed by regression tests or
+  // other callers. Normalizing here prevents case and URL-hyphen differences
+  // from making every candidate score zero.
+  const normalizedSignals = {
+    ...signals,
+    heading: normalizeProductName(signals?.heading || ""),
+    path: normalizeProductName(signals?.path || "")
+  };
+  const selected = selectDirectProductRecords(products, normalizedSignals);
+  return selected.length ? selected : products;
+}
+
 function selectMainProduct(products, signals) {
   if (!products.length) return [];
 
-  const headingTokens = new Set((signals.heading || "").split(/\s+/).filter(token => token.length > 1));
-  const pathTokens = new Set((signals.path || "").split(/\s+/).filter(token => token.length > 1));
+  // Always normalize signals at the scoring boundary. Most internal callers
+  // already pass normalized values, but the exported selection helper can
+  // also receive a raw H1 and a hyphenated URL path.
+  const headingText = normalizeProductName(signals?.heading || "");
+  const pathText = normalizeProductName(signals?.path || "");
+  const headingTokens = new Set(headingText.split(/\s+/).filter(token => token.length > 1));
+  const pathTokens = new Set(pathText.split(/\s+/).filter(token => token.length > 1));
 
   const scoreProduct = product => {
     const name = normalizeProductName(product.name);
@@ -5881,6 +6783,11 @@ function selectMainProduct(products, signals) {
     };
 
     let score = Math.max(overlap(headingTokens) * 1.25, overlap(pathTokens));
+    // Token overlap alone ties a base model with a longer related model
+    // (e.g. "Forze" vs. "Forze-B"). Give an exact H1 or URL identity a
+    // decisive bonus so recommendations cannot win merely by source type.
+    if (headingText && name === headingText) score += 0.35;
+    if (pathText && name === pathText) score += 0.25;
     if (product.source === "metadata") score += 0.08;
     if (product.source === "microdata") score += 0.04;
     return score;
@@ -6091,6 +6998,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   const pages = [];
   const products = [];
   const collectedProductKeys = new Set();
+  const detailPageRecordSelection = [];
 
   let totalBytes = 0;
   let failedPages = 0;
@@ -6347,20 +7255,45 @@ export async function crawlWebsite(inputUrl, options = {}) {
       }
 
       const pageProducts = (isCategoryScopedCrawl || isDirectProductUrl) && currentIsProductPage
-        ? page.products.filter(product => {
-            try {
-              const candidate = new URL(
-                product.url || product.sourceUrl || response.url,
-                response.url
-              );
-              const currentPath = currentPageUrl.pathname.replace(/\/+$/, "");
-              const candidatePath = candidate.pathname.replace(/\/+$/, "");
-              return candidate.origin === currentPageUrl.origin &&
-                candidatePath === currentPath;
-            } catch {
-              return false;
+        ? (() => {
+            const currentPath = currentPageUrl.pathname.replace(/\/+$/, "");
+            const urlMatchedProducts = page.products.filter(product => {
+              try {
+                const candidate = new URL(
+                  product.url || product.sourceUrl || response.url,
+                  response.url
+                );
+                const candidatePath = candidate.pathname.replace(/\/+$/, "");
+                return candidate.origin === currentPageUrl.origin &&
+                  candidatePath === currentPath;
+              } catch {
+                return false;
+              }
+            });
+            if (urlMatchedProducts.length <= 1) return urlMatchedProducts;
+            const detailSignals = getProductPageSignals(
+              html, response.url, urlMatchedProducts, pageRoot
+            );
+            const selectedProducts = selectPrimaryProductRecords(urlMatchedProducts, detailSignals);
+            if (selectedProducts.length < urlMatchedProducts.length) {
+              const selectedSet = new Set(selectedProducts);
+              const filteredProducts = urlMatchedProducts.filter(product => !selectedSet.has(product));
+              detailPageRecordSelection.push({
+                url: response.url,
+                extractedCandidates: urlMatchedProducts.length,
+                retainedCandidates: selectedProducts.length,
+                filteredCandidates: filteredProducts.map(product => ({
+                  name: product.name || null,
+                  source: product.source || null,
+                  sku: product.sku || null,
+                  gtin: product.gtin || null,
+                  price: Number.isFinite(product.price) ? product.price : null,
+                  currency: product.currency || null
+                }))
+              });
             }
-          })
+            return selectedProducts;
+          })()
         : page.products;
 
       for (const product of pageProducts) {
@@ -6526,7 +7459,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   }));
 
   const diagnostics = {
-    importerVersion: "V3.76",
+    importerVersion: "V3.86.1",
     errorDetails: errors.slice(0, 10),
     productDetailCandidatesDiscovered: candidateProductDetailUrls.size,
     productDetailUrlsQueued: queuedCategoryDetailUrls.size,
@@ -6544,6 +7477,9 @@ export async function crawlWebsite(inputUrl, options = {}) {
     primaryProductBuyBoxPages: pages.filter(page => page.diagnostics?.primaryProductBuyBox === true).length,
     productDetailPagesWithZeroProducts: pages.filter(page => page.diagnostics?.productDetailPage === true && (!Array.isArray(page.products) || page.products.length === 0)).length,
     productDetailPagesWithMultipleRawProducts: pages.filter(page => page.diagnostics?.productDetailPage === true && Array.isArray(page.products) && page.products.length > 1).length,
+    productDetailPagesWithExtraRecordsFiltered: detailPageRecordSelection.length,
+    productDetailExtraRecordsFiltered: detailPageRecordSelection.reduce((sum, item) => sum + (item.extractedCandidates - item.retainedCandidates), 0),
+    productDetailExtraRecordsFilteredList: detailPageRecordSelection,
     categoryPagesFailed: failedCategoryPages,
     productDetailPagesFailed: failedProductDetailPages,
     productDetailRequestConcurrency: 1,
