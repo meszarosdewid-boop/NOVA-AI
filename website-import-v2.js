@@ -7,10 +7,11 @@ import ipaddr from "ipaddr.js";
 import { load as loadHtml } from "cheerio";
 
 // ==========================================
-// NOVA AI - WEBSITE IMPORTER V3.86.1
+// NOVA AI - WEBSITE IMPORTER V3.86.2
 // Universal product import: multilingual variant discovery, product dimensions and per-parcel package breakdown
 // V3.86 adds conservative PDP extraction for SKU, EAN/GTIN, product weight and explicit stock availability.
 // V3.86.1 prevents generic availability headings (for example "Dostupnosť") from being interpreted as stock status.
+// V3.86.2 extracts identifiers, availability and explicit stock data from embedded Next.js product JSON.
 // V3.85 prioritizes explicit currency-qualified selling-price elements over mixed product-card text and records price provenance.
 // V3.84.1 selects only the primary product from queued detail pages while preserving explicitly grouped variants.
 // V3.82 adds a safe current-product fallback from page title/metadata when storefront dimensions are omitted from the raw HTTP HTML.
@@ -2312,7 +2313,7 @@ export function extractProductIdentifiers(value = {}) {
   };
   const brandValue = value.brand?.name || value.brand || value.manufacturer?.name || value.manufacturer;
   const identifiers = {
-    sku: scalar(value.sku, value.SKU, value.itemNumber, value.item_number, value.articleNumber, value.article_number),
+    sku: scalar(value.sku, value.SKU, value.partNo, value.part_no, value.itemNumber, value.item_number, value.articleNumber, value.article_number),
     gtin: scalar(value.gtin, value.gtin8, value.gtin12, value.gtin13, value.gtin14, value.ean, value.ean13, value.barcode),
     mpn: scalar(value.mpn, value.MPN, value.manufacturerPartNumber, value.manufacturer_part_number),
     productId: scalar(value.productID, value.productId, value.product_id, value.id, value.itemId, value.item_id),
@@ -3217,6 +3218,144 @@ function extractMetadataProduct($, pageUrl) {
 // ==========================================
 
 
+function parseEmbeddedStockCount(rawValue) {
+  if (typeof rawValue === "number") {
+    return Number.isSafeInteger(rawValue) && rawValue >= 0 && rawValue <= 10000000
+      ? rawValue
+      : null;
+  }
+  if (typeof rawValue !== "string") return null;
+  const value = rawValue.trim();
+  if (!/^\\d{1,7}(?:[,.]0+)?$/.test(value)) return null;
+  const parsed = Number(value.replace(",", "."));
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+// Read availability only from explicit product-level structured fields.
+// Storefronts may encode the status as text, as a boolean, or both.
+function extractEmbeddedAvailability(value) {
+  const candidates = [
+    ["storeStatus.message", value?.storeStatus?.message],
+    ["availabilityText", value?.availabilityText],
+    ["stockStatus", value?.stockStatus],
+    ["availabilityStatus", value?.availabilityStatus],
+    ["availability", typeof value?.availability === "string" ? value.availability : null],
+    ["status", typeof value?.status === "string" ? value.status : null]
+  ];
+
+  for (const [field, raw] of candidates) {
+    const text = cleanText(String(raw ?? ""), 180);
+    if (!text || /^(?:true|false|null|undefined|0|1)$/i.test(text)) continue;
+    const normalized = normalizeAvailabilityStatus(text);
+    if (normalized) {
+      return {
+        availability: normalized.availability,
+        availabilityText: normalized.availabilityText,
+        availabilitySource: `embedded-json:${field}`
+      };
+    }
+  }
+
+  const flag = typeof value?.availability === "boolean"
+    ? value.availability
+    : typeof value?.storeStatus?.available === "boolean"
+      ? value.storeStatus.available
+      : typeof value?.isInStock === "boolean"
+        ? value.isInStock
+        : typeof value?.inStock === "boolean"
+          ? value.inStock
+          : null;
+
+  if (flag != null) {
+    return {
+      availability: flag ? "InStock" : "OutOfStock",
+      availabilityText: flag ? "In stock (structured boolean)" : "Out of stock (structured boolean)",
+      availabilitySource: typeof value?.availability === "boolean"
+        ? "embedded-json:availability-boolean"
+        : typeof value?.storeStatus?.available === "boolean"
+          ? "embedded-json:storeStatus.available"
+          : typeof value?.isInStock === "boolean"
+            ? "embedded-json:isInStock"
+            : "embedded-json:inStock"
+    };
+  }
+
+  return {};
+}
+
+// Store summaries and per-location quantities are separate from product
+// physical weight. In particular, a store-unit field named "weight" must
+// never be interpreted as the product's weight.
+function extractEmbeddedStock(value) {
+  const storeEntries = Array.isArray(value?.store)
+    ? value.store.filter(item => item && typeof item === "object")
+    : [];
+
+  const summaries = storeEntries.map((entry, index) => ({
+    index,
+    count: parseEmbeddedStockCount(
+      entry.count ?? entry.stockQuantity ?? entry.availableQuantity ?? entry.quantity
+    ),
+    unit: cleanText(String(entry.name || entry.unitName || entry.unit || ""), 60)
+  })).filter(item => item.count != null);
+
+  let stockQuantity = null;
+  let stockQuantityUnit = null;
+  let stockSource = null;
+
+  // A single explicit summary row is unambiguous. Multiple rows may represent
+  // different package units, so do not add them together without clear evidence.
+  if (summaries.length === 1) {
+    stockQuantity = summaries[0].count;
+    stockQuantityUnit = summaries[0].unit || null;
+    stockSource = `embedded-json:product.store[${summaries[0].index}].count`;
+  } else if (summaries.length === 0) {
+    const rootQuantity = parseEmbeddedStockCount(
+      value?.stockQuantity ??
+      value?.availableQuantity ??
+      value?.quantityInStock ??
+      value?.inventoryQuantity ??
+      value?.inventoryLevel?.value
+    );
+    if (rootQuantity != null) {
+      stockQuantity = rootQuantity;
+      stockQuantityUnit = cleanText(String(
+        value?.stockQuantityUnit || value?.quantityUnit || value?.unit || ""
+      ), 60) || null;
+      stockSource = "embedded-json:explicit-stock-quantity";
+    }
+  }
+
+  const stockLocations = [];
+  for (const entry of storeEntries) {
+    const unit = cleanText(String(entry.name || entry.unitName || entry.unit || ""), 60);
+    const locations = Array.isArray(entry.storeData) ? entry.storeData : [];
+    for (const location of locations) {
+      if (!location || typeof location !== "object") continue;
+      const name = cleanText(String(
+        location.storeName || location.name || location.locationName || location.store || ""
+      ), 160);
+      const quantity = parseEmbeddedStockCount(
+        location.storeCount ?? location.count ?? location.stockQuantity ?? location.quantity
+      );
+      if (!name || quantity == null) continue;
+      stockLocations.push({ name, quantity, ...(unit ? { unit } : {}) });
+    }
+  }
+
+  return {
+    ...(stockQuantity != null ? {
+      stockQuantity,
+      ...(stockQuantityUnit ? { stockQuantityUnit } : {}),
+      stockSource
+    } : {}),
+    ...(stockLocations.length ? {
+      stockLocations,
+      stockLocationsSource: "embedded-json:product.store[].storeData[]"
+    } : {})
+  };
+}
+
 function findEmbeddedProducts(value, pageUrl, output = []) {
   if (!value || typeof value !== "object") {
     return output;
@@ -3243,6 +3382,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
       : null;
   const nestedPrice = value.price && typeof value.price === "object" ? value.price : null;
 
+  const structuredPriceData = value.finalPriceData || value.priceData || value.standardPriceData || null;
   const rawPrice =
     defaultPrice?.price ??
     nestedPrice?.value ??
@@ -3251,7 +3391,10 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     value.price ??
     value.finalPrice ??
     value.salePrice ??
-    value.currentPrice;
+    value.currentPrice ??
+    value.finalPriceData?.price ??
+    value.priceData?.price ??
+    value.standardPriceData?.price;
 
   const price = parsePrice(rawPrice);
   const typeText = Array.isArray(value["@type"])
@@ -3259,7 +3402,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     : String(value["@type"] || "");
   const explicitProductType = /(?:^|\s|\/)Product(?:$|\s)/i.test(typeText);
   const hasProductIdentifier = Boolean(
-    value.sku || value.productId || value.product_id ||
+    value.sku || value.partNo || value.part_no || value.productId || value.product_id ||
     (value.id && (value.product_variants || value.product_images || value.categories || value.attributes))
   );
   const hasOffer = Boolean(value.offers && getOfferPrice(value.offers));
@@ -3267,6 +3410,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     defaultPrice?.currencyCode ||
     defaultPrice?.currency ||
     nestedPrice?.currency ||
+    structuredPriceData?.currency ||
     value.priceCurrency ||
     value.currency
   ));
@@ -3324,17 +3468,17 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     output.push({
       name: cleanText(name, 300),
       price,
-      priceExtractionEvidence: { method: "embedded-json", rawPrice: rawPrice == null ? null : String(rawPrice), currency: normalizeCurrency(defaultPrice?.currencyCode || defaultPrice?.currency || value.priceCurrency || value.currency) },
+      priceExtractionEvidence: { method: "embedded-json", rawPrice: rawPrice == null ? null : String(rawPrice), currency: normalizeCurrency(defaultPrice?.currencyCode || defaultPrice?.currency || nestedPrice?.currency || structuredPriceData?.currency || value.priceCurrency || value.currency) },
       currency: normalizeCurrency(
         defaultPrice?.currencyCode ||
         defaultPrice?.currency ||
+        nestedPrice?.currency ||
+        structuredPriceData?.currency ||
         value.priceCurrency ||
         value.currency
       ),
-      availability:
-        value.availability ||
-        value.availabilityText ||
-        null,
+      ...extractEmbeddedAvailability(value),
+      ...extractEmbeddedStock(value),
       unit: extractStructuredUnit(value, defaultPrice),
       ...extractPackageMeasure(value, defaultPrice),
       ...extractPhysicalSpecsFromStructured(value, defaultPrice),
@@ -5040,7 +5184,7 @@ function deduplicateProducts(products) {
         if ((!product.unit || product.unit === "neuvedené") && existing.unit) merged.unit = existing.unit;
         if (!product.image && existing.image) merged.image = existing.image;
         if (!product.availability && existing.availability) merged.availability = existing.availability;
-        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource"]) {
+        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource", "stockLocations", "stockLocationsSource"]) {
           if (product[field] == null && existing[field] != null) merged[field] = existing[field];
         }
         for (const field of ["unitPrice", "unitPriceUnit", "packagePrice", "packageQuantity", "packageUnit", "packageLabel", "packageMeasureSource", "sku", "gtin", "mpn", "productId"]) {
@@ -5064,7 +5208,7 @@ function deduplicateProducts(products) {
         if ((!existing.unit || existing.unit === "neuvedené") && product.unit && product.unit !== "neuvedené") existing.unit = product.unit;
         if (!existing.image && product.image) existing.image = product.image;
         if (!existing.availability && product.availability) existing.availability = product.availability;
-        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource"]) {
+        for (const field of ["availabilityText", "availabilitySource", "stockQuantity", "stockQuantityUnit", "stockSource", "stockLocations", "stockLocationsSource"]) {
           if (existing[field] == null && product[field] != null) existing[field] = product[field];
         }
         for (const field of ["unitPrice", "unitPriceUnit", "packagePrice", "packageQuantity", "packageUnit", "packageLabel", "packageMeasureSource", "sku", "gtin", "mpn", "productId"]) {
@@ -7459,7 +7603,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   }));
 
   const diagnostics = {
-    importerVersion: "V3.86.1",
+    importerVersion: "V3.86.2",
     errorDetails: errors.slice(0, 10),
     productDetailCandidatesDiscovered: candidateProductDetailUrls.size,
     productDetailUrlsQueued: queuedCategoryDetailUrls.size,
