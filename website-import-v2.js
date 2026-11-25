@@ -3410,6 +3410,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     defaultPrice?.currencyCode ||
     defaultPrice?.currency ||
     nestedPrice?.currency ||
+    structuredPriceData?.currencyCode ||
     structuredPriceData?.currency ||
     value.priceCurrency ||
     value.currency
@@ -3468,12 +3469,14 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     output.push({
       name: cleanText(name, 300),
       price,
-      priceExtractionEvidence: { method: "embedded-json", rawPrice: rawPrice == null ? null : String(rawPrice), currency: normalizeCurrency(defaultPrice?.currencyCode || defaultPrice?.currency || nestedPrice?.currency || structuredPriceData?.currency || value.priceCurrency || value.currency) },
+      priceExtractionEvidence: { method: "embedded-json", rawPrice: rawPrice == null ? null : String(rawPrice), currency: normalizeCurrency(defaultPrice?.currencyCode || defaultPrice?.currency || nestedPrice?.currency || structuredPriceData?.currencyCode ||
+    structuredPriceData?.currency || value.priceCurrency || value.currency) },
       currency: normalizeCurrency(
         defaultPrice?.currencyCode ||
         defaultPrice?.currency ||
         nestedPrice?.currency ||
-        structuredPriceData?.currency ||
+        structuredPriceData?.currencyCode ||
+    structuredPriceData?.currency ||
         value.priceCurrency ||
         value.currency
       ),
