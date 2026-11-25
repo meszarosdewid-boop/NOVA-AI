@@ -1,4 +1,208 @@
-"tenantId": "demo",
+
+[NOVA AI IMPORT DIAGNOSTIKA]
+{
+  "tenantId": "demo",
+  "inputUrl": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/#content",
+  "pagesVisited": 3,
+  "pagesFailed": 0,
+  "stopReason": null,
+  "totalBytes": 3406672,
+  "crawlerUniqueProducts": 2,
+  "pageProducts": 3,
+  "foundRaw": 2,
+  "validProductsWithPriceAndName": 2,
+  "rejectedMissingOrInvalidPrice": 0,
+  "rejectedInvalidName": 0,
+  "afterUrlAndNameDeduplication": 2,
+  "rawPageValidProducts": 3,
+  "rawPageUniqueIdentities": 2,
+  "rawPageDuplicates": 1,
+  "rawPages": [
+    {
+      "page": 1,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/#content",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 2,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s09432373/",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 3,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    }
+  ],
+  "duplicateProductsAcrossPages": [
+    {
+      "name": "PAX / HASVIK Skriňa - biela/biela 200x66x236 cm",
+      "url": "https://ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376",
+      "pages": [
+        1,
+        3
+      ]
+    }
+  ],
+  "importerVersion": "V3.82",
+  "categoryPagesFailed": 0,
+  "productDetailPagesFailed": 0,
+  "productDetailCandidatesDiscovered": 0,
+  "productDetailUrlsQueued": 0,
+  "productDetailPagesVisited": 0,
+  "productDetailPagesSuccessful": 0,
+  "productDetailUrlsQueuedList": [],
+  "productDetailUrlsVisitedList": [],
+  "productDetailUrlsNotVisited": [],
+  "productDetailLimitReached": false,
+  "productDetailCoverageLimited": false,
+  "productDetailRequestConcurrency": 1,
+  "productDetailRequestDelayMs": 900,
+  "variantProducts": 2,
+  "variantGroups": 1,
+  "productsWithVariantOptions": 0,
+  "variantOptionsDetected": 0,
+  "paginationUrlsDiscovered": 0,
+  "ajaxPaginationRequests": 0,
+  "queueRemaining": 0,
+  "timeMs": 8203,
+  "pagePerformance": [
+    {
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/#content",
+      "htmlParseMs": 109,
+      "productExtractionMs": 1239,
+      "linkExtractionMs": 447
+    },
+    {
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s09432373/",
+      "htmlParseMs": 83,
+      "productExtractionMs": 1122,
+      "linkExtractionMs": 447
+    },
+    {
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/",
+      "htmlParseMs": 86,
+      "productExtractionMs": 1131,
+      "linkExtractionMs": 463
+    }
+  ],
+  "limits": {
+    "maxPages": 3,
+    "maxTotalBytes": 188743680,
+    "maxResponseBytes": 8388608,
+    "maxTotalTimeMs": 1200000,
+    "maxQueue": 400
+  },
+  "pages": [
+    {
+      "page": 1,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/#content",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 2,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s09432373/",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 3,
+      "url": "https://www.ikea.com/sk/sk/p/pax-hasvik-skrina-biela-biela-s39432376/",
+      "products": 1,
+      "error": null
+    }
+  ]
+}
+
+[NOVA AI IMPORT DIAGNOSTIKA]
+{
+  "tenantId": "demo",
+  "inputUrl": "https://gymbeam.sk/proteinove-latte-gymbeam.html",
+  "pagesVisited": 1,
+  "pagesFailed": 0,
+  "stopReason": null,
+  "totalBytes": 802098,
+  "crawlerUniqueProducts": 3,
+  "pageProducts": 3,
+  "foundRaw": 3,
+  "validProductsWithPriceAndName": 3,
+  "rejectedMissingOrInvalidPrice": 0,
+  "rejectedInvalidName": 0,
+  "afterUrlAndNameDeduplication": 3,
+  "rawPageValidProducts": 3,
+  "rawPageUniqueIdentities": 3,
+  "rawPageDuplicates": 0,
+  "rawPages": [
+    {
+      "page": 1,
+      "url": "https://gymbeam.sk/proteinove-latte-gymbeam.html",
+      "extracted": 3,
+      "valid": 3,
+      "uniqueOnPage": 3,
+      "duplicateOnPage": 0
+    }
+  ],
+  "duplicateProductsAcrossPages": [],
+  "importerVersion": "V3.82",
+  "categoryPagesFailed": 0,
+  "productDetailPagesFailed": 0,
+  "productDetailCandidatesDiscovered": 0,
+  "productDetailUrlsQueued": 0,
+  "productDetailPagesVisited": 0,
+  "productDetailPagesSuccessful": 0,
+  "productDetailUrlsQueuedList": [],
+  "productDetailUrlsVisitedList": [],
+  "productDetailUrlsNotVisited": [],
+  "productDetailLimitReached": false,
+  "productDetailCoverageLimited": false,
+  "productDetailRequestConcurrency": 1,
+  "productDetailRequestDelayMs": 900,
+  "variantProducts": 3,
+  "variantGroups": 1,
+  "productsWithVariantOptions": 0,
+  "variantOptionsDetected": 0,
+  "paginationUrlsDiscovered": 0,
+  "ajaxPaginationRequests": 0,
+  "queueRemaining": 0,
+  "timeMs": 1725,
+  "pagePerformance": [
+    {
+      "url": "https://gymbeam.sk/proteinove-latte-gymbeam.html",
+      "htmlParseMs": 107,
+      "productExtractionMs": 120,
+      "linkExtractionMs": 0
+    }
+  ],
+  "limits": {
+    "maxPages": 1,
+    "maxTotalBytes": 188743680,
+    "maxResponseBytes": 8388608,
+    "maxTotalTimeMs": 1200000,
+    "maxQueue": 400
+  },
+  "pages": [
+    {
+      "page": 1,
+      "url": "https://gymbeam.sk/proteinove-latte-gymbeam.html",
+      "products": 3,
+      "error": null
+    }
+  ]
+}
+
+[NOVA AI IMPORT DIAGNOSTIKA]
+{
+  "tenantId": "demo",
   "inputUrl": "https://euronics.front.grandus.sk/kategoria/pc-gaming",
   "pagesVisited": 71,
   "pagesFailed": 2,
@@ -1878,6 +2082,1631 @@
       "url": "https://euronics.front.grandus.sk/kosik",
       "products": 0,
       "error": "robots.txt disallowed product detail"
+    }
+  ]
+}
+Terminate batch job (Y/N)? y
+
+C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp>node tests\test-v383-euronics-route-guard.mjs
+PASS explicit Euronics /produkt/ URLs remain product candidates
+PASS category routes are not queued as product details
+PASS homepage, cart and compare routes are not queued as product details
+PASS same-category pagination remains discoverable
+PASS V3.83 Euronics route-guard regression checks
+
+C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp>npm start
+
+> nova-ai-mvp@1.0.0 start
+> node server.js
+
+NOVA AI MVP running at http://localhost:3000
+Terminate batch job (Y/N)? y
+
+C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp>cd /d "C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp"
+
+C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp>node tests\test-v383-euronics-route-guard.mjs
+PASS explicit Euronics /produkt/ URLs remain product candidates
+PASS category routes are not queued as product details
+PASS homepage, cart and compare routes are not queued as product details
+PASS same-category pagination remains discoverable
+PASS V3.83 Euronics route-guard regression checks
+
+C:\Users\mesza\Downloads\NOVA_AI_MVP_v1\nova_ai_mvp>npm start
+
+> nova-ai-mvp@1.0.0 start
+> node server.js
+
+NOVA AI MVP running at http://localhost:3000
+
+[NOVA AI IMPORT DIAGNOSTIKA]
+{
+  "tenantId": "demo",
+  "inputUrl": "https://euronics.front.grandus.sk/kategoria/pc-gaming",
+  "pagesVisited": 59,
+  "pagesFailed": 0,
+  "stopReason": null,
+  "totalBytes": 3025610,
+  "crawlerUniqueProducts": 61,
+  "pageProducts": 118,
+  "foundRaw": 61,
+  "validProductsWithPriceAndName": 61,
+  "rejectedMissingOrInvalidPrice": 0,
+  "rejectedInvalidName": 0,
+  "afterUrlAndNameDeduplication": 61,
+  "rawPageValidProducts": 118,
+  "rawPageUniqueIdentities": 61,
+  "rawPageDuplicates": 57,
+  "rawPages": [
+    {
+      "page": 1,
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming",
+      "extracted": 32,
+      "valid": 32,
+      "uniqueOnPage": 32,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 2,
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming?page=2",
+      "extracted": 25,
+      "valid": 25,
+      "uniqueOnPage": 25,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 3,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 4,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 5,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 6,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 7,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+      "extracted": 2,
+      "valid": 2,
+      "uniqueOnPage": 2,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 8,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 9,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-297097",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 10,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 11,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 12,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 13,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+      "extracted": 2,
+      "valid": 2,
+      "uniqueOnPage": 2,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 14,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 15,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 16,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 17,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 18,
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 19,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 20,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 21,
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 22,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-azul",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 23,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 24,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 25,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 26,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 27,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 28,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 29,
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 30,
+      "url": "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 31,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 32,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 33,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-3-5mm-rozdvojka-20cm",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 34,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-vidlica-3-5-mm-4-pol-2-jack-zasuvky-3-5mm-pre-headsety-288208",
+      "extracted": 2,
+      "valid": 2,
+      "uniqueOnPage": 2,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 35,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-b-ps4-gaming-headset-playstation-official-licensed-product-blue",
+      "extracted": 2,
+      "valid": 2,
+      "uniqueOnPage": 2,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 36,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-1-5m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 37,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-mg8-rgb-mousepad-m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 38,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-90-3-5-mm-stereo-0-5m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 39,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-jack-jack-3-5mm-3m-287479",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 40,
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-gm-6-hazard",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 41,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-109-felox-gaming-mouse-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 42,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-pulz-70w-headset-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 43,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-purple",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 44,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8958-headset",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 45,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-rj45-spojka-cat5e-1gb-s",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 46,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 47,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8936-pink-headset",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 48,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 49,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-101p-gav-optical-gaming-pink",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 50,
+      "url": "https://euronics.front.grandus.sk/produkt/a4tech-x7-200mp",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 51,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-100p-console",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 52,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg9022-7-1-headset",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 53,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8901-headset",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 54,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-3m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 55,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-cm305-rgb-cz-sk",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 56,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 57,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-350-wireless-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 58,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-ultra-high-speed-8k-hdmi-kabel-prime-line-2m",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    },
+    {
+      "page": 59,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-928-helox-ultra-lightweight-gaming-mouse-black",
+      "extracted": 1,
+      "valid": 1,
+      "uniqueOnPage": 1,
+      "duplicateOnPage": 0
+    }
+  ],
+  "duplicateProductsAcrossPages": [
+    {
+      "name": "Trust GXT 232 Mantis Streaming Microphone",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "pages": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "Marvo G803 black",
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+      "pages": [
+        1,
+        4
+      ]
+    },
+    {
+      "name": "Hama audio kábel jack - jack 3m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+      "pages": [
+        1,
+        5
+      ]
+    },
+    {
+      "name": "Hama kábel HDMI vidlica - DVI-D vidlica, 1.5m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+      "pages": [
+        1,
+        6
+      ]
+    },
+    {
+      "name": "Hama redukcia 2x jack 3.5mm - jack zásuvka 3.5mm 4pól., pre headsety",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+      "pages": [
+        1,
+        7
+      ]
+    },
+    {
+      "name": "TP-Link TL-POE4824G",
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+      "pages": [
+        1,
+        8
+      ]
+    },
+    {
+      "name": "Hama",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-297097",
+      "pages": [
+        1,
+        9
+      ]
+    },
+    {
+      "name": "Hama prepojovací USB kábel 1.5m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+      "pages": [
+        1,
+        10
+      ]
+    },
+    {
+      "name": "JBL Quantum One",
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+      "pages": [
+        1,
+        11
+      ]
+    },
+    {
+      "name": "Hama sieťový patch kábel CAT5e F/UTP RJ45 tienený 15m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+      "pages": [
+        1,
+        12
+      ]
+    },
+    {
+      "name": "Trust GXT 488 Forze PS4 Gaming Headset PlayStation® official licensed product",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+      "pages": [
+        1,
+        13
+      ]
+    },
+    {
+      "name": "Hama uRage Exodus 450 Metal CZ/SK",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+      "pages": [
+        1,
+        14
+      ]
+    },
+    {
+      "name": "Trust GXT 489P Fayzo Gaming Headset Purple",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+      "pages": [
+        1,
+        15
+      ]
+    },
+    {
+      "name": "Emos HDMI 1.4 high speed 1.5m ECO",
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+      "pages": [
+        1,
+        16
+      ]
+    },
+    {
+      "name": "Trust GXT 835 Azor Illuminated Gaming Keyboard CZ/SK",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+      "pages": [
+        1,
+        17
+      ]
+    },
+    {
+      "name": "Logitech G305 Gaming Mouse black",
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+      "pages": [
+        1,
+        18
+      ]
+    },
+    {
+      "name": "Trust GXT 866 Torix Premium Mechanical Gaming Keyboard US",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+      "pages": [
+        1,
+        19
+      ]
+    },
+    {
+      "name": "Marvo M706W",
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+      "pages": [
+        1,
+        20
+      ]
+    },
+    {
+      "name": "Canyon MP-3",
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+      "pages": [
+        1,
+        21
+      ]
+    },
+    {
+      "name": "Trust Azul",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-azul",
+      "pages": [
+        1,
+        22
+      ]
+    },
+    {
+      "name": "Hama Jack predlžovací 3.5mm 3m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+      "pages": [
+        1,
+        23
+      ]
+    },
+    {
+      "name": "Hama sieťový patch kábel CAT5e F/UTP RJ45 tienený 5m",
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+      "pages": [
+        1,
+        24
+      ]
+    },
+    {
+      "name": "Emos HDMI 2.0 high speed 1.5m vylon ECO",
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+      "pages": [
+        1,
+        25
+      ]
+    },
+    {
+      "name": "Marvo SG-118 RGB",
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+      "pages": [
+        1,
+        26
+      ]
+    },
+    {
+      "name": "JBL Quantum 200",
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "pages": [
+        1,
+        27
+      ]
+    },
+    {
+      "name": "Trust GXT 278 Yozu",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+      "pages": [
+        1,
+        28
+      ]
+    },
+    {
+      "name": "Logitech G102 2nd Gen LIGHTSYNC Gaming Mouse black",
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+      "pages": [
+        1,
+        29
+      ]
+    },
+    {
+      "name": "Samsung Odyssey G55C",
+      "url": "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+      "pages": [
+        1,
+        30
+      ]
+    },
+    {
+      "name": "Trust GXT 415X Zirox Gaming Headset Xbox",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+      "pages": [
+        1,
+        31
+      ]
+    },
+    {
+      "name": "Trust GXT 612 Cetic Bluetooth Gaming Speaker Set RGB",
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+      "pages": [
+        1,
+        32
+      ]
+    }
+  ],
+  "importerVersion": "V3.83",
+  "categoryPagesFailed": 0,
+  "productDetailPagesFailed": 0,
+  "productDetailCandidatesDiscovered": 57,
+  "productDetailUrlsQueued": 57,
+  "productDetailPagesVisited": 57,
+  "productDetailPagesSuccessful": 57,
+  "productDetailUrlsQueuedList": [
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+    "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+    "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+    "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+    "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+    "https://euronics.front.grandus.sk/produkt/hama-297097",
+    "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+    "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+    "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+    "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+    "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+    "https://euronics.front.grandus.sk/produkt/trust-azul",
+    "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+    "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+    "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+    "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-3-5mm-rozdvojka-20cm",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-vidlica-3-5-mm-4-pol-2-jack-zasuvky-3-5mm-pre-headsety-288208",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-b-ps4-gaming-headset-playstation-official-licensed-product-blue",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-1-5m",
+    "https://euronics.front.grandus.sk/produkt/marvo-mg8-rgb-mousepad-m",
+    "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-90-3-5-mm-stereo-0-5m",
+    "https://euronics.front.grandus.sk/produkt/emos-jack-jack-3-5mm-3m-287479",
+    "https://euronics.front.grandus.sk/produkt/canyon-gm-6-hazard",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-109-felox-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/marvo-pulz-70w-headset-black",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-purple",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8958-headset",
+    "https://euronics.front.grandus.sk/produkt/hama-rj45-spojka-cat5e-1gb-s",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-black",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8936-pink-headset",
+    "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-101p-gav-optical-gaming-pink",
+    "https://euronics.front.grandus.sk/produkt/a4tech-x7-200mp",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-100p-console",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg9022-7-1-headset",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8901-headset",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-3m",
+    "https://euronics.front.grandus.sk/produkt/marvo-cm305-rgb-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-350-wireless-black",
+    "https://euronics.front.grandus.sk/produkt/hama-ultra-high-speed-8k-hdmi-kabel-prime-line-2m",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-928-helox-ultra-lightweight-gaming-mouse-black"
+  ],
+  "productDetailUrlsVisitedList": [
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+    "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+    "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+    "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+    "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+    "https://euronics.front.grandus.sk/produkt/hama-297097",
+    "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+    "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+    "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+    "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+    "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+    "https://euronics.front.grandus.sk/produkt/trust-azul",
+    "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+    "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+    "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+    "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-3-5mm-rozdvojka-20cm",
+    "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-vidlica-3-5-mm-4-pol-2-jack-zasuvky-3-5mm-pre-headsety-288208",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-b-ps4-gaming-headset-playstation-official-licensed-product-blue",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-1-5m",
+    "https://euronics.front.grandus.sk/produkt/marvo-mg8-rgb-mousepad-m",
+    "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-90-3-5-mm-stereo-0-5m",
+    "https://euronics.front.grandus.sk/produkt/emos-jack-jack-3-5mm-3m-287479",
+    "https://euronics.front.grandus.sk/produkt/canyon-gm-6-hazard",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-109-felox-gaming-mouse-black",
+    "https://euronics.front.grandus.sk/produkt/marvo-pulz-70w-headset-black",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-purple",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8958-headset",
+    "https://euronics.front.grandus.sk/produkt/hama-rj45-spojka-cat5e-1gb-s",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-black",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8936-pink-headset",
+    "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-101p-gav-optical-gaming-pink",
+    "https://euronics.front.grandus.sk/produkt/a4tech-x7-200mp",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-100p-console",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg9022-7-1-headset",
+    "https://euronics.front.grandus.sk/produkt/marvo-hg8901-headset",
+    "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-3m",
+    "https://euronics.front.grandus.sk/produkt/marvo-cm305-rgb-cz-sk",
+    "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+    "https://euronics.front.grandus.sk/produkt/jbl-quantum-350-wireless-black",
+    "https://euronics.front.grandus.sk/produkt/hama-ultra-high-speed-8k-hdmi-kabel-prime-line-2m",
+    "https://euronics.front.grandus.sk/produkt/trust-gxt-928-helox-ultra-lightweight-gaming-mouse-black"
+  ],
+  "productDetailUrlsNotVisited": [],
+  "productDetailLimitReached": false,
+  "productDetailCoverageLimited": false,
+  "productDetailRequestConcurrency": 1,
+  "productDetailRequestDelayMs": 900,
+  "variantProducts": 0,
+  "variantGroups": 0,
+  "productsWithVariantOptions": 61,
+  "variantOptionsDetected": 122,
+  "paginationUrlsDiscovered": 1,
+  "ajaxPaginationRequests": 0,
+  "queueRemaining": 0,
+  "timeMs": 77395,
+  "pagePerformance": [
+    {
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming",
+      "htmlParseMs": 47,
+      "productExtractionMs": 337,
+      "linkExtractionMs": 35
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming?page=2",
+      "htmlParseMs": 18,
+      "productExtractionMs": 246,
+      "linkExtractionMs": 31
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "htmlParseMs": 6,
+      "productExtractionMs": 66,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+      "htmlParseMs": 7,
+      "productExtractionMs": 51,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+      "htmlParseMs": 4,
+      "productExtractionMs": 47,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+      "htmlParseMs": 4,
+      "productExtractionMs": 51,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+      "htmlParseMs": 4,
+      "productExtractionMs": 46,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+      "htmlParseMs": 2,
+      "productExtractionMs": 47,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-297097",
+      "htmlParseMs": 2,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+      "htmlParseMs": 3,
+      "productExtractionMs": 38,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+      "htmlParseMs": 3,
+      "productExtractionMs": 43,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+      "htmlParseMs": 2,
+      "productExtractionMs": 40,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+      "htmlParseMs": 23,
+      "productExtractionMs": 63,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+      "htmlParseMs": 7,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+      "htmlParseMs": 8,
+      "productExtractionMs": 52,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+      "htmlParseMs": 4,
+      "productExtractionMs": 50,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+      "htmlParseMs": 5,
+      "productExtractionMs": 48,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+      "htmlParseMs": 4,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+      "htmlParseMs": 5,
+      "productExtractionMs": 50,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+      "htmlParseMs": 4,
+      "productExtractionMs": 48,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+      "htmlParseMs": 3,
+      "productExtractionMs": 50,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-azul",
+      "htmlParseMs": 3,
+      "productExtractionMs": 48,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+      "htmlParseMs": 3,
+      "productExtractionMs": 47,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+      "htmlParseMs": 4,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+      "htmlParseMs": 2,
+      "productExtractionMs": 40,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+      "htmlParseMs": 2,
+      "productExtractionMs": 39,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "htmlParseMs": 21,
+      "productExtractionMs": 55,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+      "htmlParseMs": 5,
+      "productExtractionMs": 43,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+      "htmlParseMs": 6,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+      "htmlParseMs": 4,
+      "productExtractionMs": 46,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+      "htmlParseMs": 6,
+      "productExtractionMs": 51,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+      "htmlParseMs": 3,
+      "productExtractionMs": 48,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-3-5mm-rozdvojka-20cm",
+      "htmlParseMs": 4,
+      "productExtractionMs": 45,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-vidlica-3-5-mm-4-pol-2-jack-zasuvky-3-5mm-pre-headsety-288208",
+      "htmlParseMs": 4,
+      "productExtractionMs": 47,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-b-ps4-gaming-headset-playstation-official-licensed-product-blue",
+      "htmlParseMs": 4,
+      "productExtractionMs": 42,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-1-5m",
+      "htmlParseMs": 3,
+      "productExtractionMs": 50,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-mg8-rgb-mousepad-m",
+      "htmlParseMs": 2,
+      "productExtractionMs": 52,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-90-3-5-mm-stereo-0-5m",
+      "htmlParseMs": 2,
+      "productExtractionMs": 42,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/emos-jack-jack-3-5mm-3m-287479",
+      "htmlParseMs": 3,
+      "productExtractionMs": 42,
+      "linkExtractionMs": 0
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-gm-6-hazard",
+      "htmlParseMs": 5,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-109-felox-gaming-mouse-black",
+      "htmlParseMs": 3,
+      "productExtractionMs": 41,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-pulz-70w-headset-black",
+      "htmlParseMs": 2,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-purple",
+      "htmlParseMs": 7,
+      "productExtractionMs": 53,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8958-headset",
+      "htmlParseMs": 7,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-rj45-spojka-cat5e-1gb-s",
+      "htmlParseMs": 2,
+      "productExtractionMs": 43,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-black",
+      "htmlParseMs": 3,
+      "productExtractionMs": 49,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8936-pink-headset",
+      "htmlParseMs": 4,
+      "productExtractionMs": 44,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+      "htmlParseMs": 2,
+      "productExtractionMs": 37,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-101p-gav-optical-gaming-pink",
+      "htmlParseMs": 3,
+      "productExtractionMs": 40,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/a4tech-x7-200mp",
+      "htmlParseMs": 2,
+      "productExtractionMs": 38,
+      "linkExtractionMs": 0
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-100p-console",
+      "htmlParseMs": 3,
+      "productExtractionMs": 47,
+      "linkExtractionMs": 2
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg9022-7-1-headset",
+      "htmlParseMs": 2,
+      "productExtractionMs": 42,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8901-headset",
+      "htmlParseMs": 3,
+      "productExtractionMs": 45,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-3m",
+      "htmlParseMs": 2,
+      "productExtractionMs": 40,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-cm305-rgb-cz-sk",
+      "htmlParseMs": 3,
+      "productExtractionMs": 48,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+      "htmlParseMs": 2,
+      "productExtractionMs": 36,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-350-wireless-black",
+      "htmlParseMs": 3,
+      "productExtractionMs": 55,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/hama-ultra-high-speed-8k-hdmi-kabel-prime-line-2m",
+      "htmlParseMs": 2,
+      "productExtractionMs": 41,
+      "linkExtractionMs": 1
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-928-helox-ultra-lightweight-gaming-mouse-black",
+      "htmlParseMs": 3,
+      "productExtractionMs": 38,
+      "linkExtractionMs": 1
+    }
+  ],
+  "limits": {
+    "maxPages": 700,
+    "maxTotalBytes": 188743680,
+    "maxResponseBytes": 8388608,
+    "maxTotalTimeMs": 1200000,
+    "maxQueue": 400
+  },
+  "pages": [
+    {
+      "page": 1,
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming",
+      "products": 32,
+      "error": null
+    },
+    {
+      "page": 2,
+      "url": "https://euronics.front.grandus.sk/kategoria/pc-gaming?page=2",
+      "products": 25,
+      "error": null
+    },
+    {
+      "page": 3,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 4,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-g803-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 5,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-3m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 6,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-kabel-hdmi-vidlica-dvi-d-vidlica-1-5m-289363",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 7,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-2x-jack-3-5mm-jack-zasuvka-3-5mm-4pol-pre-headsety-288211",
+      "products": 2,
+      "error": null
+    },
+    {
+      "page": 8,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-tl-poe4824g",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 9,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-297097",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 10,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-prepojovaci-usb-kabel-1-5m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 11,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-one",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 12,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-15m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 13,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-ps4-gaming-headset-playstation-official-licensed-product",
+      "products": 2,
+      "error": null
+    },
+    {
+      "page": 14,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-urage-exodus-450-metal-cz-sk",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 15,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-489p-fayzo-gaming-headset-purple",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 16,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-1-4-high-speed-1-5m-eco",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 17,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-835-azor-illuminated-gaming-keyboard-cz-sk",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 18,
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g305-gaming-mouse-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 19,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-866-torix-premium-mechanical-gaming-keyboard-us",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 20,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-m706w",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 21,
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-mp-3",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 22,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-azul",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 23,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-jack-predlzovaci-3-5mm-3m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 24,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-5m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 25,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-hdmi-2-0-high-speed-1-5m-vylon-eco",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 26,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-sg-118-rgb",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 27,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 28,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-278-yozu",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 29,
+      "url": "https://euronics.front.grandus.sk/produkt/logitech-g102-2nd-gen-lightsync-gaming-mouse-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 30,
+      "url": "https://euronics.front.grandus.sk/produkt/samsung-odyssey-g55c-446350",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 31,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-415x-zirox-gaming-headset-xbox",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 32,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-612-cetic-bluetooth-gaming-speaker-set-rgb",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 33,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-3-5mm-rozdvojka-20cm",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 34,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-redukcia-jack-vidlica-3-5-mm-4-pol-2-jack-zasuvky-3-5mm-pre-headsety-288208",
+      "products": 2,
+      "error": null
+    },
+    {
+      "page": 35,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-488-forze-b-ps4-gaming-headset-playstation-official-licensed-product-blue",
+      "products": 2,
+      "error": null
+    },
+    {
+      "page": 36,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-1-5m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 37,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-mg8-rgb-mousepad-m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 38,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-audio-kabel-jack-jack-90-3-5-mm-stereo-0-5m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 39,
+      "url": "https://euronics.front.grandus.sk/produkt/emos-jack-jack-3-5mm-3m-287479",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 40,
+      "url": "https://euronics.front.grandus.sk/produkt/canyon-gm-6-hazard",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 41,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-109-felox-gaming-mouse-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 42,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-pulz-70w-headset-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 43,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-purple",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 44,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8958-headset",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 45,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-rj45-spojka-cat5e-1gb-s",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 46,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-490-fayzo-7-1-usb-gaming-headset-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 47,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8936-pink-headset",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 48,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 49,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-101p-gav-optical-gaming-pink",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 50,
+      "url": "https://euronics.front.grandus.sk/produkt/a4tech-x7-200mp",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 51,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-100p-console",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 52,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg9022-7-1-headset",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 53,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-hg8901-headset",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 54,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-sietovy-patch-kabel-cat5e-f-utp-rj45-tieneny-3m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 55,
+      "url": "https://euronics.front.grandus.sk/produkt/marvo-cm305-rgb-cz-sk",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 56,
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 57,
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-350-wireless-black",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 58,
+      "url": "https://euronics.front.grandus.sk/produkt/hama-ultra-high-speed-8k-hdmi-kabel-prime-line-2m",
+      "products": 1,
+      "error": null
+    },
+    {
+      "page": 59,
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-928-helox-ultra-lightweight-gaming-mouse-black",
+      "products": 1,
+      "error": null
     }
   ]
 }
