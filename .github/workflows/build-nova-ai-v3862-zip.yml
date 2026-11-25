@@ -1,0 +1,43 @@
+name: Build NOVA AI V3.86.2 ZIP
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-nova-ai-v3862-zip.yml"
+permissions:
+  contents: read
+jobs:
+  package-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout V3.86.2 package branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/euronics-next-data-v3862-20261125
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+      - name: Install parser dependencies
+        run: npm install --no-save --package-lock=false cheerio ipaddr.js
+      - name: Check importer syntax
+        run: node --check website-import-v2.js
+      - name: Run Euronics regression suite
+        run: node tests/test-euronics-next-data.mjs
+      - name: Assemble ZIP package
+        run: |
+          mkdir -p dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/tests
+          cp website-import-v2.js dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/
+          cp tests/test-euronics-next-data.mjs dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/tests/
+          cp README_V3862_EURONICS_NEXT_DATA.txt dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/
+          cp CHANGELOG_V3862_EURONICS_NEXT_DATA.md dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/
+          cp TEST_EURONICS_NEXT_DATA_V3862.cmd dist/NOVA_AI_V3.86.2_EURONICS_NEXT_DATA/
+          cd dist
+          zip -r ../NOVA_AI_V3.86.2_EURONICS_NEXT_DATA.zip NOVA_AI_V3.86.2_EURONICS_NEXT_DATA
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NOVA_AI_V3.86.2_EURONICS_NEXT_DATA
+          path: NOVA_AI_V3.86.2_EURONICS_NEXT_DATA.zip
+          if-no-files-found: error
+          retention-days: 7
