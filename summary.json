@@ -1,0 +1,60 @@
+{
+  "generatedAt": "2026-11-25T17:00:37.388Z",
+  "importerVersion": "Expected installed local version: V3.86.1",
+  "readOnly": true,
+  "catalogWrite": false,
+  "results": [
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "file": "jbl-quantum-200.html",
+      "ok": true,
+      "httpStatus": 200,
+      "finalUrl": "https://euronics.front.grandus.sk/produkt/jbl-quantum-200",
+      "contentType": "text/html; charset=utf-8",
+      "htmlBytes": 57554,
+      "savedFile": "jbl-quantum-200.html",
+      "parserResult": {
+        "gtin": "6925281969546"
+      }
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+      "file": "tp-link-ms105.html",
+      "ok": true,
+      "httpStatus": 200,
+      "finalUrl": "https://euronics.front.grandus.sk/produkt/tp-link-ms105",
+      "contentType": "text/html; charset=utf-8",
+      "htmlBytes": 30461,
+      "savedFile": "tp-link-ms105.html",
+      "parserResult": {
+        "gtin": "6957939000363"
+      }
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+      "file": "tp-link-ls1005.html",
+      "ok": true,
+      "httpStatus": 200,
+      "finalUrl": "https://euronics.front.grandus.sk/produkt/tp-link-ls1005",
+      "contentType": "text/html; charset=utf-8",
+      "htmlBytes": 35593,
+      "savedFile": "tp-link-ls1005.html",
+      "parserResult": {
+        "gtin": "6935364089061"
+      }
+    },
+    {
+      "url": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "file": "trust-gxt-232-mantis.html",
+      "ok": true,
+      "httpStatus": 200,
+      "finalUrl": "https://euronics.front.grandus.sk/produkt/trust-gxt-232-mantis-streaming-microphone",
+      "contentType": "text/html; charset=utf-8",
+      "htmlBytes": 41777,
+      "savedFile": "trust-gxt-232-mantis.html",
+      "parserResult": {
+        "gtin": "8713439226560"
+      }
+    }
+  ]
+}
