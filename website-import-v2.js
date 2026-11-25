@@ -3226,7 +3226,7 @@ function parseEmbeddedStockCount(rawValue) {
   }
   if (typeof rawValue !== "string") return null;
   const value = rawValue.trim();
-  if (!/^\\d{1,7}(?:[,.]0+)?$/.test(value)) return null;
+  if (!/^\d{1,7}(?:[,.]0+)?$/.test(value)) return null;
   const parsed = Number(value.replace(",", "."));
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
