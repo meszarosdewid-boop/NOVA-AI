@@ -32,10 +32,10 @@ test("separates conflicting values inside variantAttributes", () => {
   assert.equal(groups.length, 2);
 });
 
-test("variant attribute key matching is case-insensitive", () => {
+test("variant attribute keys are normalized across case and whitespace", () => {
   const groups = groupImportProductsByIdentity([
-    product({ variantAttributes: { Color: "Black" } }),
-    product({ variantAttributes: { color: "White" } })
+    product({ variantAttributes: { "Product Color": "Black" } }),
+    product({ variantAttributes: { productColor: "White" } })
   ]);
   assert.equal(groups.length, 2);
 });
