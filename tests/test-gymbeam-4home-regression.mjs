@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { extractProductsFromHtml } from "../website-import-v2.js";
+import { extractProductsFromHtml, extractWebsiteLinks } from "../website-import-v2.js";
 
 function getProducts(result) {
   return Array.isArray(result) ? result : (Array.isArray(result?.products) ? result.products : []);
@@ -129,6 +129,48 @@ function getProducts(result) {
   assert.equal(products[0].price, 129.99, "4home regular gross price must win over coupon price");
   assert.equal(products[0].couponPriceDetected, true);
   assert.equal(products[0].source, "4home-detail-fast-v333");
+}
+
+// GymBeam: preserve its real `p` pagination parameter while rejecting
+// facet combinations as additional category pages.
+{
+  const url = "https://gymbeam.sk/proteiny/";
+  const html = `
+    <html><body>
+      <nav class="pagination">
+        <a href="/proteiny/?p=2">2</a>
+        <a href="/proteiny/?p=2&trademark_ingredient=pea">2 s filtrom</a>
+      </nav>
+    </body></html>`;
+  const result = extractWebsiteLinks(html, url, { categoryOnly: true, returnMeta: true });
+
+  assert.deepEqual(
+    result.paginationLinks,
+    ["https://gymbeam.sk/proteiny/?p=2"],
+    "GymBeam must use p=2 and reject facet URLs as pagination"
+  );
+}
+
+// 4home: JavaScript hash pagination must resolve to the store's AJAX URL.
+{
+  const url = "https://www.4home.sk/kategoria/spotrebice/";
+  const html = `
+    <html><body>
+      <nav class="pagination">
+        <a href="#2">2</a>
+        <a href="#3">3</a>
+      </nav>
+    </body></html>`;
+  const result = extractWebsiteLinks(html, url, { categoryOnly: true, returnMeta: true });
+
+  assert.ok(
+    result.paginationLinks.includes("https://www.4home.sk/kategoria/spotrebice/?skip=&p=2&ajax_loading=rewrite"),
+    "4home hash page 2 must resolve to its AJAX pagination endpoint"
+  );
+  assert.ok(
+    result.paginationLinks.includes("https://www.4home.sk/kategoria/spotrebice/?skip=&p=3&ajax_loading=rewrite"),
+    "4home hash page 3 must resolve to its AJAX pagination endpoint"
+  );
 }
 
 console.log("GymBeam + 4home regression tests passed.");
