@@ -1,3 +1,4 @@
+// CI trigger commit: execute the GymBeam + 4home regressions in a pull request.
 import assert from "node:assert/strict";
 import { extractProductsFromHtml, extractWebsiteLinks } from "../website-import-v2.js";
 
