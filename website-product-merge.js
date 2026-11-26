@@ -127,18 +127,32 @@ function sameComparableOffer(a, b) {
 }
 
 function variantMetadataConflicts(a, b) {
-  const scalarKeys = ["variantName", "color", "size", "material", "pattern", "option"];
+  const scalarKeys = ["variantName", "color", "colour", "size", "material", "pattern", "option", "capacity", "storage", "memory"];
   for (const key of scalarKeys) {
     const left = normalizeName(a?.[key]);
     const right = normalizeName(b?.[key]);
     if (left && right && left !== right) return true;
   }
+
   const leftAttributes = a?.variantAttributes && typeof a.variantAttributes === "object" ? a.variantAttributes : {};
   const rightAttributes = b?.variantAttributes && typeof b.variantAttributes === "object" ? b.variantAttributes : {};
-  for (const key of Object.keys(leftAttributes)) {
-    if (rightAttributes[key] == null || rightAttributes[key] === "") continue;
-    if (normalizeName(leftAttributes[key]) !== normalizeName(rightAttributes[key])) return true;
+  const normalizedAttributeKey = key => normalizeName(key).replace(/\\s+/g, "");
+  const rightValuesByKey = new Map();
+  for (const [key, rawValue] of Object.entries(rightAttributes)) {
+    const normalizedKey = normalizedAttributeKey(key);
+    const normalizedValue = normalizeName(rawValue);
+    if (!normalizedKey || !normalizedValue) continue;
+    if (!rightValuesByKey.has(normalizedKey)) rightValuesByKey.set(normalizedKey, new Set());
+    rightValuesByKey.get(normalizedKey).add(normalizedValue);
   }
+  for (const [key, rawValue] of Object.entries(leftAttributes)) {
+    const normalizedKey = normalizedAttributeKey(key);
+    const normalizedValue = normalizeName(rawValue);
+    const rightValues = rightValuesByKey.get(normalizedKey);
+    if (!normalizedKey || !normalizedValue || !rightValues?.size) continue;
+    if ([...rightValues].some(value => value !== normalizedValue)) return true;
+  }
+
   const leftGroup = normalizeIdentifier(a?.variantGroupId);
   const rightGroup = normalizeIdentifier(b?.variantGroupId);
   return Boolean(leftGroup && rightGroup && leftGroup !== rightGroup);
