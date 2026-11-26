@@ -144,6 +144,22 @@ function variantMetadataConflicts(a, b) {
   return Boolean(leftGroup && rightGroup && leftGroup !== rightGroup);
 }
 
+/**
+ * Physical specifications may be copied between listing/detail records even
+ * when their displayed prices differ, but only when an exact GTIN or SKU
+ * confirms the same sellable product and variant metadata does not conflict.
+ */
+export function canMergePhysicalAttributes(leftItem, rightItem) {
+  const left = identityOf(leftItem);
+  const right = identityOf(rightItem);
+  if (identitiesConflict(left, right) || variantMetadataConflicts(leftItem, rightItem)) return false;
+  if (left.brand && right.brand && left.brand !== right.brand) return false;
+  return Boolean(
+    (left.gtin && right.gtin && left.gtin === right.gtin) ||
+    (left.sku && right.sku && left.sku === right.sku)
+  );
+}
+
 function isSafeListingDetailPair(listingGroup, detailGroup) {
   const listings = listingGroup.filter(entry => isCategoryListingRecord(entry.item));
   const details = detailGroup.filter(entry => isVisitedProductDetailRecord(entry.item));
@@ -252,9 +268,17 @@ export function groupImportProductsByIdentity(records) {
     const candidates = [];
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
       const group = groups[groupIndex];
-      const matches = group.some(existing => sameStrongIdentity(existing.identity, entry.identity));
+      // A shared parent productId must never bridge two explicitly different
+      // variants (for example, black and white, or two different sizes).
+      const matches = group.some(existing =>
+        sameStrongIdentity(existing.identity, entry.identity) &&
+        !variantMetadataConflicts(existing.item, entry.item)
+      );
       if (!matches) continue;
-      const hasConflict = group.some(existing => identitiesConflict(existing.identity, entry.identity));
+      const hasConflict = group.some(existing =>
+        identitiesConflict(existing.identity, entry.identity) ||
+        variantMetadataConflicts(existing.item, entry.item)
+      );
       if (!hasConflict) candidates.push(groupIndex);
     }
 
