@@ -136,7 +136,7 @@ function variantMetadataConflicts(a, b) {
 
   const leftAttributes = a?.variantAttributes && typeof a.variantAttributes === "object" ? a.variantAttributes : {};
   const rightAttributes = b?.variantAttributes && typeof b.variantAttributes === "object" ? b.variantAttributes : {};
-  const normalizedAttributeKey = key => normalizeName(key).replace(/\\s+/g, "");
+  const normalizedAttributeKey = key => normalizeName(key).replaceAll(" ", "");
   const rightValuesByKey = new Map();
   for (const [key, rawValue] of Object.entries(rightAttributes)) {
     const normalizedKey = normalizedAttributeKey(key);
