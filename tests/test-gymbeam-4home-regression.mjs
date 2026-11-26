@@ -46,8 +46,8 @@ function getProducts(result) {
   assert.equal(products.length, 2, "GymBeam must retain both explicit JSON-LD offers");
   assert.ok(products.every(product => product.isVariant === true), "GymBeam offers must remain variants");
   assert.deepEqual(
-    products.map(product => product.packageQuantity).sort((a, b) => a - b),
-    [0.5, 1],
+    products.map(product => `${product.packageQuantity} ${product.packageUnit}`).sort(),
+    ["1 kg", "500 g"],
     "GymBeam offer sizes must remain attached to the correct variants"
   );
   assert.deepEqual(
