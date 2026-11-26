@@ -1696,6 +1696,35 @@ function normalizeProductName(value) {
     .trim();
 }
 
+function normalizeImportProductAttributes(value, fallback = []) {
+  const output = [];
+  const seenLabels = new Set();
+  const entries = [
+    ...(Array.isArray(value) ? value : []),
+    ...(Array.isArray(fallback) ? fallback : [])
+  ];
+  for (const entry of entries.slice(0, 320)) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = String(entry.name ?? entry.label ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
+    const attributeValue = String(entry.value ?? entry.valueText ?? entry.displayValue ?? "").replace(/\s+/g, " ").trim().slice(0, 240);
+    if (!name || !attributeValue) continue;
+    const labelKey = normalizeProductName(name);
+    if (!labelKey || seenLabels.has(labelKey)) continue;
+    seenLabels.add(labelKey);
+    output.push({
+      name,
+      value: attributeValue,
+      ...(entry.source ? { source: String(entry.source).trim().slice(0, 80) } : {})
+    });
+    if (output.length >= 160) break;
+  }
+  return output;
+}
+
+function mergeImportProductAttributes(...groups) {
+  return normalizeImportProductAttributes(groups.flatMap(group => Array.isArray(group) ? group : []));
+}
+
 function normalizeImportProductUrl(value) {
   if (!value) return "";
   try {
@@ -1808,7 +1837,7 @@ function mergeImportPhysicalSpecs(primary = {}, fallback = {}) {
     const primarySource = String(primary?.[sourceKey] || "").toLowerCase();
     const fallbackSource = String(fallback?.[sourceKey] || "").toLowerCase();
     const primaryIsGenericWeight = prefix === "shippingWeight" && /json:weight-assumed-packed|json:weight$/.test(primarySource);
-    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty/.test(fallbackSource);
+    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty|json:detailedparameters|json:product-parameters|json:technical-parameters/.test(fallbackSource);
     const preferFallback = fallbackValue > 0 && fallbackIsExplicit && (primaryValue <= 0 || primaryIsGenericWeight);
     const value = preferFallback ? fallbackValue : primaryValue > 0 ? primaryValue : fallbackValue > 0 ? fallbackValue : null;
     if (value != null) {
@@ -1868,6 +1897,7 @@ function mergeImportProductGroup(group) {
     ...preferred,
     ...mergeImportPhysicalSpecs(preferred),
     ...mergedIdentifiers,
+    productAttributes: mergeImportProductAttributes(...candidates.map(item => item?.productAttributes)),
     identifierConflicts,
     currency: chosenCurrency,
     ambiguousPrice: prices.size > 1,
@@ -2006,7 +2036,7 @@ function buildCategoryListingCoverageAudit(products, visitedDetailUrls, failedDe
   );
   const gtinOf = item => normalizeAuditId(item?.gtin || item?.ean || item?.ean13 || item?.barcode);
   const skuOf = item => normalizeAuditId(item?.sku || item?.SKU || item?.articleNumber || item?.article_number);
-  const productUrlOf = item => normalizeImportProductUrl(item?.url || "");
+  const mpnOf = item => normalizeAuditId(item?.mpn || item?.MPN || item?.model || item?.modelNumber || item?.model_number);
   const detailIds = new Set(detailRecords.map(productIdOf).filter(Boolean));
   const detailGtins = new Set(detailRecords.map(gtinOf).filter(Boolean));
   const detailSkus = new Set(detailRecords.map(skuOf).filter(Boolean));
@@ -2024,16 +2054,126 @@ function buildCategoryListingCoverageAudit(products, visitedDetailUrls, failedDe
   // as successful only when it appears in the visited set and not in failures.
   const successfulUrls = new Set([...visitedUrls].filter(value => !failedUrls.has(value)));
   const distinct = values => [...new Set(values.filter(Boolean))];
+  const safeText = (value, max = 220) => {
+    const text = String(value ?? "").trim();
+    return text ? text.slice(0, max) : null;
+  };
+  const normalizeUrl = value => normalizeImportProductUrl(value || "");
+  const productUrlOf = item => {
+    // Listing records can carry the CATEGORY URL in `url`/`sourceUrl`.
+    // Prefer explicit product/detail URL fields, then accept an URL only when
+    // it was actually visited as a detail or has a product-like path.
+    const candidates = [
+      item?.productUrl, item?.product_url, item?.detailUrl, item?.detail_url,
+      item?.canonicalProductUrl, item?.canonical_product_url, item?.url, item?.sourceUrl
+    ];
+    for (const candidate of candidates) {
+      const normalized = normalizeUrl(candidate);
+      if (!normalized) continue;
+      if (visitedUrls.has(normalized)) return normalized;
+      try {
+        const pathname = new URL(normalized).pathname;
+        if (/\/(?:produkt|product|products|item|items|detail|p)\//i.test(pathname)) return normalized;
+      } catch { /* Ignore malformed URL candidates in diagnostics. */ }
+    }
+    return "";
+  };
   const listingProductIds = distinct(listingRecords.map(productIdOf));
   const listingGtins = distinct(listingRecords.map(gtinOf));
   const listingSkus = distinct(listingRecords.map(skuOf));
   const listingProductUrls = distinct(listingRecords.map(productUrlOf));
-  const listingPageUrls = distinct(listingRecords.map(item => normalizeImportProductUrl(item.listingPageUrl)));
+  const listingPageUrls = distinct(listingRecords.map(item => normalizeUrl(item.listingPageUrl)));
   const listingProductIdsWithoutDetailMatch = listingProductIds.filter(id => !detailIds.has(id));
   const listingGtinsWithoutDetailMatch = listingGtins.filter(gtin => !detailGtins.has(gtin));
   const listingSkusWithoutDetailMatch = listingSkus.filter(sku => !detailSkus.has(sku));
   const listingProductUrlsNotVisited = listingProductUrls.filter(productUrl => !visitedUrls.has(productUrl));
   const listingProductUrlsWithoutSuccessfulDetail = listingProductUrls.filter(productUrl => !successfulUrls.has(productUrl));
+
+  // Capture each unique listing record with its original URL fields. This is
+  // diagnostic-only and deliberately does not feed back into preview products.
+  const listingRecordsDetailed = listingRecords.map((item, index) => {
+    const listingPageUrl = normalizeUrl(item.listingPageUrl);
+    let listingPageNumber = null;
+    try {
+      const parsed = new URL(listingPageUrl);
+      const rawPage = Number(parsed.searchParams.get("page") || 1);
+      listingPageNumber = Number.isInteger(rawPage) && rawPage > 0 ? rawPage : null;
+    } catch { /* Keep null for unparseable URLs. */ }
+    return {
+      record: index + 1,
+      productId: productIdOf(item) || null,
+      name: safeText(item.name),
+      normalizedName: safeText(normalizeProductName(item.name || ""), 220),
+      brand: safeText(item.brand, 100),
+      sku: skuOf(item) || null,
+      gtin: gtinOf(item) || null,
+      mpn: mpnOf(item) || null,
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
+      currency: safeText(item.currency, 12),
+      urlField: safeText(item.url, 500),
+      sourceUrlField: safeText(item.sourceUrl, 500),
+      pageUrlField: safeText(item.pageUrl, 500),
+      productUrlField: safeText(item.productUrl || item.product_url || item.detailUrl || item.detail_url || item.canonicalProductUrl || item.canonical_product_url, 500),
+      resolvedProductUrl: productUrlOf(item) || null,
+      listingPageUrl,
+      listingPageNumber,
+      detailPageVisited: item.detailPageVisited === true,
+      source: safeText(item.source, 160)
+    };
+  });
+
+  const groupRecords = (items, keyFn) => {
+    const map = new Map();
+    for (const item of items) {
+      const key = keyFn(item);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(item);
+    }
+    return map;
+  };
+  const listingByProductId = groupRecords(listingRecordsDetailed, item => item.productId);
+  const repeatedProductIdGroups = [...listingByProductId.entries()]
+    .filter(([, items]) => items.length > 1)
+    .map(([productId, items]) => {
+      const unique = field => distinct(items.map(item => item[field]));
+      const uniqueNames = distinct(items.map(item => normalizeProductName(item.name || "")));
+      const uniquePages = distinct(items.map(item => item.listingPageUrl));
+      const uniqueUrls = distinct(items.map(item => item.resolvedProductUrl));
+      const uniqueGtins = unique("gtin");
+      const uniqueSkus = unique("sku");
+      return {
+        productId,
+        recordCount: items.length,
+        extraRecords: items.length - 1,
+        listingPages: uniquePages,
+        names: distinct(items.map(item => item.name)),
+        gtins: uniqueGtins,
+        skus: uniqueSkus,
+        productUrls: uniqueUrls,
+        hasIdentityConflict: uniqueNames.length > 1 || uniqueGtins.length > 1 || uniqueSkus.length > 1 || uniqueUrls.length > 1,
+        records: items
+      };
+    })
+    .sort((a, b) => b.extraRecords - a.extraRecords || a.productId.localeCompare(b.productId));
+
+  const listingByPage = groupRecords(listingRecordsDetailed, item => item.listingPageUrl || "(bez URL stránky)");
+  const listingPagesDetailed = [...listingByPage.entries()].map(([listingPageUrl, items]) => {
+    const ids = items.map(item => item.productId).filter(Boolean);
+    const idCounts = new Map();
+    for (const id of ids) idCounts.set(id, (idCounts.get(id) || 0) + 1);
+    const duplicateRecords = [...idCounts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+    const pageNumber = items.find(item => item.listingPageNumber != null)?.listingPageNumber ?? null;
+    return {
+      listingPageNumber: pageNumber,
+      listingPageUrl,
+      records: items.length,
+      distinctProductIds: new Set(ids).size,
+      recordsWithoutProductId: items.filter(item => !item.productId).length,
+      duplicateProductIdRecordsOnPage: duplicateRecords,
+      repeatedProductIds: [...idCounts.entries()].filter(([, count]) => count > 1).map(([productId, count]) => ({ productId, records: count }))
+    };
+  }).sort((a, b) => (a.listingPageNumber ?? 9999) - (b.listingPageNumber ?? 9999) || a.listingPageUrl.localeCompare(b.listingPageUrl));
 
   const unmatchedByIdentity = new Map();
   for (const item of listingRecords) {
@@ -2051,28 +2191,44 @@ function buildCategoryListingCoverageAudit(products, visitedDetailUrls, failedDe
     const key = [productId, gtin, sku, productUrl, normalizeProductName(item.name || "")].join("|");
     if (unmatchedByIdentity.has(key)) continue;
     unmatchedByIdentity.set(key, {
-      name: String(item.name || "").slice(0, 220),
-      brand: String(item.brand || "").slice(0, 100) || null,
+      name: safeText(item.name),
+      brand: safeText(item.brand, 100),
       productId: productId || null,
       sku: sku || null,
       gtin: gtin || null,
       price: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
       productUrl: productUrl || null,
-      listingPageUrl: normalizeImportProductUrl(item.listingPageUrl) || null,
+      listingPageUrl: normalizeUrl(item.listingPageUrl) || null,
       detailPageAttempted: Boolean(productUrl && visitedUrls.has(productUrl)),
       detailPageSuccessful: Boolean(productUrl && successfulUrls.has(productUrl)),
       detailPageFailed: Boolean(productUrl && failedUrls.has(productUrl)),
-      source: String(item.source || "").slice(0, 100) || null
+      source: safeText(item.source, 100)
     });
   }
+
+  const recordsWithoutProductId = listingRecordsDetailed.filter(item => !item.productId);
+  const conflictingProductIdGroups = repeatedProductIdGroups.filter(item => item.hasIdentityConflict);
+  const repeatedProductIdExtraRecords = repeatedProductIdGroups.reduce((sum, item) => sum + item.extraRecords, 0);
+  const listingRecordsWithProductId = listingRecordsDetailed.filter(item => item.productId).length;
 
   return {
     listingPages: listingPageUrls.length,
     listingRecords: listingRecords.length,
+    listingRecordsWithProductId,
+    listingRecordsWithoutProductId: recordsWithoutProductId.length,
     listingDistinctProductIds: listingProductIds.length,
+    repeatedProductIdGroups: repeatedProductIdGroups.length,
+    repeatedProductIdExtraRecords,
+    conflictingProductIdGroups: conflictingProductIdGroups.length,
     listingDistinctGtins: listingGtins.length,
     listingDistinctSkus: listingSkus.length,
     listingDistinctProductUrls: listingProductUrls.length,
+    listingPageRecordsTotal: listingRecordsDetailed.length,
+    listingPageSummary: listingPagesDetailed,
+    repeatedProductIdDetails: repeatedProductIdGroups,
+    conflictingProductIdDetails: conflictingProductIdGroups,
+    recordsWithoutProductIdDetails: recordsWithoutProductId.slice(0, 100),
+    listingRecordsDetailed,
     detailPageRecords: detailRecords.length,
     detailDistinctProductIds: detailIds.size,
     detailDistinctGtins: detailGtins.size,
@@ -2089,7 +2245,6 @@ function buildCategoryListingCoverageAudit(products, visitedDetailUrls, failedDe
     listingRecordsWithoutAnyDetailIdentityMatchSample: [...unmatchedByIdentity.values()].slice(0, 100)
   };
 }
-
 function isWebsiteImportComplete(result, diagnostics, errorsCount) {
   const effectiveStopReason = result?.stopReason || diagnostics?.stopReason || null;
   const categoryPagesFailed = Number(diagnostics?.categoryPagesFailed ?? errorsCount);
@@ -2264,7 +2419,9 @@ app.post(
         failedProductDetailUrls
       );
       const diagnosticSummary = {
-        serverPreviewFixVersion: "V3.87.5",
+        serverPreviewFixVersion: "V3.87.8",
+        diagnosticsSchemaVersion: "CATEGORY_IDENTITY_AUDIT_V1",
+        diagnosticFile: "diagnostika.txt",
         tenantId: context.id,
         inputUrl: url,
         pagesVisited: pagesScanned,
@@ -2303,6 +2460,8 @@ app.post(
         rawPageUniqueIdentities: rawIdentityPages.size,
         rawPageDuplicates: rawPageValidProducts.length - rawIdentityPages.size,
         rawPages: rawPageStats,
+        rawCategoryListingPages: rawPageStats.filter(item => /\/kategoria\//i.test(String(item.url || ""))),
+        rawCategoryListingRecords: rawPageStats.filter(item => /\/kategoria\//i.test(String(item.url || ""))).reduce((sum, item) => sum + Number(item.valid || 0), 0),
         duplicateProductsAcrossPages: rawCrossPageDuplicates,
         // Diagnostic-only audit: compares category listing records with detail
         // URLs actually visited. It does not change crawling, grouping or preview items.
@@ -2336,7 +2495,31 @@ app.post(
         limits: crawlerDiagnostics.limits ?? null,
         pages: pageDiagnostics
       };
-      console.log("\n[NOVA AI IMPORT DIAGNOSTIKA]\n" + JSON.stringify(diagnosticSummary, null, 2));
+      // Save the complete diagnostic directly to disk. Printing the full
+      // 300KB+ JSON to a Windows terminal can exceed its scrollback buffer,
+      // silently dropping the beginning of the report. This is diagnostic-only
+      // and does not change preview products, validation, grouping or catalog.
+      const diagnosticFilePath = path.join(__dirname, "diagnostika.txt");
+      const diagnosticFileContent =
+        "[NOVA AI IMPORT DIAGNOSTIKA]\r\n" +
+        JSON.stringify(diagnosticSummary, null, 2) +
+        "\r\n";
+      try {
+        fs.writeFileSync(diagnosticFilePath, diagnosticFileContent, "utf8");
+        console.log("\n[NOVA AI IMPORT DIAGNOSTIKA] Úplný výpis uložený do diagnostika.txt");
+      } catch (diagnosticWriteError) {
+        // A diagnostics-write problem must not fail or alter the import preview.
+        console.error(
+          "NOVA AI: nepodarilo sa uložiť diagnostika.txt:",
+          diagnosticWriteError?.message || diagnosticWriteError
+        );
+      }
+      console.log(
+        `[NOVA AI IMPORT DIAGNOSTIKA V3.87.8] ${found.length} produktov; ` +
+        `${categoryListingAudit.listingRecords} kategóriových záznamov; ` +
+        `${categoryListingAudit.listingDistinctProductIds} jedinečných Product ID; ` +
+        `${crawlerDiagnostics.productDetailPagesSuccessful ?? 0} úspešných detailov.`
+      );
 
       if (!found.length) {
         return res.status(422).json({
@@ -2386,6 +2569,7 @@ app.post(
           shippingWeightUnit: item.shippingWeight != null ? (item.shippingWeightUnit || "kg") : null,
           shippingWeightSource: item.shippingWeightSource || null,
           shippingWeightQualifier: item.shippingWeightQualifier || null,
+          productAttributes: normalizeImportProductAttributes(item.productAttributes),
           packageCount: normalizeOptionalPositiveNumber(item.packageCount),
           packageCountSource: item.packageCountSource || null,
           shippingPackages: Array.isArray(item.shippingPackages) ? item.shippingPackages.slice(0, 80) : [],
@@ -2661,13 +2845,17 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           Number(old.packageCount || 0) !== Number(item.packageCount || 0) ||
           String(old.shippingWeightQualifier || "") !== String(item.shippingWeightQualifier || "") ||
           JSON.stringify(old.shippingPackages || []) !== JSON.stringify(item.shippingPackages || []);
+        const incomingProductAttributes = normalizeImportProductAttributes(item.productAttributes);
+        const mergedProductAttributes = normalizeImportProductAttributes(incomingProductAttributes, old.productAttributes);
+        const needsProductAttributes = incomingProductAttributes.length > 0 &&
+          JSON.stringify(old.productAttributes || []) !== JSON.stringify(mergedProductAttributes);
         const needsIdentifierMetadata =
           String(old.sku || "") !== String(item.sku || "") ||
           String(old.gtin || "") !== String(item.gtin || "") ||
           String(old.mpn || "") !== String(item.mpn || "") ||
           String(old.productId || "") !== String(item.productId || "") ||
           String(old.brand || "") !== String(item.brand || "");
-        if (samePrice && !needsVariantMetadata && !needsPriceMetadata && !needsIdentifierMetadata && !needsPhysicalMetadata) { unchanged++; continue; }
+        if (samePrice && !needsVariantMetadata && !needsPriceMetadata && !needsIdentifierMetadata && !needsPhysicalMetadata && !needsProductAttributes) { unchanged++; continue; }
         products[existingIndex] = {
           ...old, price: roundMoney(item.price),
           packagePrice: roundMoney(item.packagePrice ?? item.price),
@@ -2698,6 +2886,7 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           mpn: item.mpn || old.mpn || null, productId: item.productId || old.productId || null,
           brand: item.brand || old.brand || null, availability: item.availability || old.availability || null,
           image: item.image || old.image || null,
+          productAttributes: mergedProductAttributes.length ? mergedProductAttributes : (old.productAttributes || []),
           ...(item.identifierConflicts?.length ? { identifierConflicts: item.identifierConflicts } : {}),
           ...(item.isVariant ? { isVariant: true, variantGroupId: item.variantGroupId, variantGroupName: item.variantGroupName, variantName: item.variantName, variantCount: item.variantCount || null, variantAttributes: item.variantAttributes || {} } : {})
         };
@@ -2733,6 +2922,7 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           createdAt: now, priceUpdatedAt: now, sku: item.sku || null, gtin: item.gtin || null,
           mpn: item.mpn || null, productId: item.productId || null, brand: item.brand || null,
           availability: item.availability || null, image: item.image || null,
+          productAttributes: normalizeImportProductAttributes(item.productAttributes),
           ...(item.identifierConflicts?.length ? { identifierConflicts: item.identifierConflicts } : {}),
           ...(item.isVariant ? { isVariant: true, variantGroupId: item.variantGroupId, variantGroupName: item.variantGroupName, variantName: item.variantName, variantCount: item.variantCount || null, variantAttributes: item.variantAttributes || {} } : {})
         });
@@ -2930,7 +3120,13 @@ function findRelevantCatalogProducts(products, message, history, budget = null) 
       Number(product.price) > 0
     )
     .map(product => {
-      const productTokens = [...new Set(getCatalogSearchTokens(product.name))];
+      const productAttributeEntries = normalizeImportProductAttributes(product.productAttributes);
+      const productAttributeText = productAttributeEntries
+        .map(entry => `${entry.name}: ${entry.value}`)
+        .join("; ");
+      const productSearchText = [product.name, product.brand, product.sku, product.mpn, productAttributeText]
+        .filter(Boolean).join(" ");
+      const productTokens = [...new Set(getCatalogSearchTokens(productSearchText))];
       if (!productTokens.length) return null;
 
       let bestScore = 0;
@@ -2971,6 +3167,7 @@ function findRelevantCatalogProducts(products, message, history, budget = null) 
         priceType: String(product.priceType || "").trim(),
         description: String(product.description || product.shortDescription || "").trim(),
         category: String(product.category || "").trim(),
+        productAttributes: productAttributeEntries.slice(0, 24),
         sourceUrl: String(product.sourceUrl || "").trim(),
         score: bestScore,
         overlap: bestOverlap
@@ -2993,10 +3190,16 @@ function findRelevantCatalogProducts(products, message, history, budget = null) 
 function systemPrompt(tenant, catalogProducts = [], budget = null) {
   const catalogContext = catalogProducts.length
     ? `\n\nSCHVÁLENÝ KATALÓG PRODUKTOV A CIEN (údaje konkrétnej firmy):\n${catalogProducts.map((product, index) => {
+        const attributeText = Array.isArray(product.productAttributes)
+          ? product.productAttributes.slice(0, 16).map(entry =>
+              `${String(entry.name || "").slice(0, 80)}: ${String(entry.value || "").slice(0, 120)}`
+            ).filter(value => !/^:\s*$/.test(value)).join("; ").slice(0, 900)
+          : "";
         const extra = [
           product.description ? `popis: ${String(product.description).slice(0, 350)}` : "",
           product.category ? `kategória: ${String(product.category).slice(0, 100)}` : "",
-          product.priceType ? `typ ceny: ${String(product.priceType).slice(0, 80)}` : ""
+          product.priceType ? `typ ceny: ${String(product.priceType).slice(0, 80)}` : "",
+          attributeText ? `technické parametre: ${attributeText}` : ""
         ].filter(Boolean).join("; ");
         return `${index + 1}. ${product.name} — ${product.price.toFixed(2)} EUR / ${product.unit}${extra ? `; ${extra}` : ""}`;
       }).join("\n")}\nTieto ceny môžeš zákazníkovi presne oznámiť ako ceny evidované v katalógu. Nezaokrúhľuj ich inak a nepridávaj neexistujúce poplatky.`
@@ -3014,6 +3217,7 @@ Pravidlá:
 - Cenu produktu môžeš uviesť iba vtedy, ak je uvedená v schválenom katalógu vyššie. V takom prípade ju oznám presne a označ ju ako cenu evidovanú v katalógu.
 - Ak zákazník žiada odporúčanie, výber alebo porovnanie, vyber 2 až 3 najvhodnejšie produkty z uvedeného katalógu. Ak je vhodný iba jeden produkt, odporuč iba jeden; nikdy nevymýšľaj ďalšie možnosti.
 - Pri odporúčaní vysvetli stručne, prečo produkt zodpovedá požiadavke, ale opieraj sa iba o názov, cenu a výslovne uvedené údaje v katalógu. Nevyvodzuj rozmery, materiál, kvalitu, farbu, výkon ani iné vlastnosti, ktoré nie sú uvedené.
+- Technický parameter uveď iba vtedy, keď je výslovne uvedený pri danom produkte v katalógu vyššie. Chýbajúci parameter označ ako nezistený; nikdy ho neodhaduj z názvu, značky, obrázka ani podobného modelu.
 - Ak zákazník uvedie rozpočet, striktne ho dodrž. Odporúčaj iba produkty, ktorých evidovaná jednotková cena neprekračuje rozpočet. Ak sa žiadny vhodný produkt nezmestí do rozpočtu, povedz to a spýtaj sa, či chce zákazník upraviť rozpočet alebo požiadavky.
 - Pri porovnaní uveď jasne názvy a evidované ceny; rozdiely vysvetľuj iba na základe údajov v katalógu.
 - Ak katalóg obsahuje viac produktov zodpovedajúcich kategórii alebo účelu, nevyberaj automaticky iba najlacnejší. Zohľadni požiadavku zákazníka, rozpočet a dostupné parametre.

@@ -7,9 +7,9 @@ import ipaddr from "ipaddr.js";
 import { load as loadHtml } from "cheerio";
 
 // ==========================================
-// NOVA AI - WEBSITE IMPORTER V3.86.3
-// V3.86.3 raises the bounded category-detail crawl budget and reports candidates skipped by that cap.
-// Product extraction, Next.js parsing, prices, identifiers and merge behavior are unchanged.
+// NOVA AI - WEBSITE IMPORTER V3.86.4
+// V3.86.4 reads Grandus/Euronics detailedParameters and preserves generic product attributes.
+// Existing category/detail crawl limits, price validation, identifiers and safe merge rules are unchanged.
 // Universal product import: multilingual variant discovery, product dimensions and per-parcel package breakdown
 // V3.86 adds conservative PDP extraction for SKU, EAN/GTIN, product weight and explicit stock availability.
 // V3.86.1 prevents generic availability headings (for example "Dostupnosť") from being interpreted as stock status.
@@ -899,7 +899,7 @@ export function extractExplicitNetPackageMeasureFromText(value) {
   // Accept only labels that explicitly describe the product's net/package
   // contents. This intentionally excludes generic "hmotnosť" and nutrition
   // table reference quantities such as 100 g.
-  const match = text.match(/(?:netto\s*(?:(?:váha|hmotnosť|obsah))?|net\s*(?:weight|mass|content)|čist(?:á|a)\s*(?:hmotnosť|váha)|hmotnosť\s*(?:balenia|produktu)|váha\s*(?:balenia|produktu)|netto\s*weight|package\s*(?:weight|content)|obsah\s*balenia|objem\s*balenia)\s*(?:\((kg|g|ml|l)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)?\b/i);
+  const match = text.match(/(?:netto\s*(?:(?:váha|hmotnosť|obsah|objem))?|net\s*(?:weight|mass|content|volume)|čist(?:á|a)\s*(?:hmotnosť|váha|obsah)|netto\s*weight|obsah\s*balenia|package\s*content)\s*(?:\((kg|g|ml|l)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)?\b/i);
   if (!match) return null;
 
   let quantity = Number(match[2].replace(",", "."));
@@ -1451,7 +1451,7 @@ function mergePhysicalSpecFields(primary = {}, fallback = {}) {
     const primarySource = String(primary?.[sourceKey] || "").toLowerCase();
     const fallbackSource = String(fallback?.[sourceKey] || "").toLowerCase();
     const primaryIsGenericWeight = prefix === "shippingWeight" && /json:weight-assumed-packed|json:weight$/.test(primarySource);
-    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty/.test(fallbackSource);
+    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty|json:detailedparameters|json:product-parameters|json:technical-parameters/.test(fallbackSource);
     const preferFallback = fallbackValue > 0 && fallbackIsExplicit && (primaryValue <= 0 || primaryIsGenericWeight);
     const value = preferFallback ? fallbackValue : primaryValue > 0 ? primaryValue : fallbackValue > 0 ? fallbackValue : null;
     if (value != null) {
@@ -1518,6 +1518,159 @@ function applyPhysicalSpecPair(output, label, value, source = "dom:specification
       output[`${prefix}Source`] = source;
     }
   }
+}
+
+function readStructuredParameterText(value) {
+  if (value == null) return "";
+  if (Array.isArray(value)) {
+    return value.map(item => readStructuredParameterText(item)).filter(Boolean).join(", ").slice(0, 240);
+  }
+  if (typeof value === "object") {
+    const nested = value.value ?? value.valueText ?? value.displayValue ?? value.text ?? value.amount ?? value.quantityValue ?? value.name ?? value.label ?? value.code ?? value.symbol;
+    if (nested == null || nested === value) return "";
+    const text = readStructuredParameterText(nested);
+    const unitRaw = value.unitText ?? value.unitCode ?? value.unit ?? value.measurementUnit ?? value.unitOfMeasure ?? "";
+    const unit = typeof unitRaw === "object"
+      ? (unitRaw.symbol ?? unitRaw.abbreviation ?? unitRaw.name ?? unitRaw.code ?? unitRaw.value ?? "")
+      : unitRaw;
+    const unitText = cleanText(String(unit || ""), 30);
+    return text && unitText && !text.toLowerCase().trimEnd().endsWith(unitText.toLowerCase())
+      ? `${text} ${unitText}`.slice(0, 240)
+      : text;
+  }
+  if (typeof value === "boolean") return value ? "Áno" : "Nie";
+  return cleanText(String(value), 240);
+}
+
+function getStructuredProductAttributeEntries(object, defaultSource = "json:product-attributes") {
+  if (!object || typeof object !== "object") return [];
+  const arrayKeys = [
+    "detailedParameters", "detailed_parameters", "productParameters", "product_parameters",
+    "technicalParameters", "technical_parameters", "parameters", "specifications",
+    "additionalProperty", "additionalProperties", "attributes", "features"
+  ];
+  const nestedKeys = [
+    "parameterGroups", "parameter_groups", "groups", "parameters", "parameterValues", "parameter_values",
+    "items", "children", "attributes", "specifications", "features", "properties",
+    "detailedParameters", "detailed_parameters", "productParameters", "product_parameters", "values"
+  ];
+  const entries = [];
+  const seen = new Set();
+  const add = (rawLabel, rawValue, source) => {
+    const label = cleanText(String(rawLabel ?? ""), 100);
+    const value = readStructuredParameterText(rawValue);
+    if (!label || !value || label.length > 100 || value.length > 240) return;
+    const normalizedLabel = normalizePhysicalLabel(label).replace(/[^a-z0-9]+/g, " ").trim();
+    if (!normalizedLabel || /^(?:parametre|vlastnosti|technicke udaje|technicke parametre|specifications|features|details)$/i.test(normalizedLabel)) return;
+    const key = `${normalizedLabel}|${value.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    entries.push({ name: label, value, source: source || defaultSource });
+  };
+
+  const walk = (container, source, depth = 0) => {
+    if (depth > 4 || !container || typeof container !== "object" || entries.length >= 160) return;
+    if (Array.isArray(container)) {
+      for (const item of container.slice(0, 160)) {
+        if (!item || typeof item !== "object") continue;
+        const nested = [item.parameter, item.attribute, item.specification, item.property, item.feature]
+          .find(candidate => candidate && typeof candidate === "object" && !Array.isArray(candidate)) || {};
+        const label = item.name ?? item.label ?? item.parameterName ?? item.parameter_name ?? item.title ??
+          item.displayName ?? item.display_name ?? item.propertyName ?? item.property_name ?? item.caption ??
+          item.key ?? item.code ?? (typeof item.parameter === "string" ? item.parameter : null) ??
+          nested.name ?? nested.label ?? nested.title ?? nested.key ?? nested.code;
+        const rawValue = item.value ?? item.parameterValue ?? item.parameter_value ?? item.valueText ??
+          item.value_text ?? item.displayValue ?? item.display_value ?? item.text ?? item.content ??
+          item.val ?? nested.value ?? nested.parameterValue ?? nested.text;
+        const unitRaw = item.unitText ?? item.unitCode ?? item.unit ?? item.measurementUnit ?? item.unitOfMeasure ??
+          nested.unitText ?? nested.unitCode ?? nested.unit ?? "";
+        const unit = typeof unitRaw === "object"
+          ? (unitRaw.symbol ?? unitRaw.abbreviation ?? unitRaw.name ?? unitRaw.code ?? unitRaw.value ?? "")
+          : unitRaw;
+        let combined = rawValue;
+        if (combined != null && unit && typeof combined !== "object") {
+          const text = String(combined).trim();
+          if (text && !text.toLowerCase().endsWith(String(unit).toLowerCase())) combined = `${text} ${unit}`;
+        } else if (combined && typeof combined === "object" && unit && !combined.unit && !combined.unitText && !combined.unitCode) {
+          combined = { ...combined, unitText: unit };
+        }
+        add(label, combined, source);
+
+        for (const childKey of nestedKeys) {
+          const child = item[childKey];
+          if (child && typeof child === "object") walk(child, `${source}.${childKey}`, depth + 1);
+        }
+      }
+      return;
+    }
+
+    // Object maps and nested parameter-group containers are both used by
+    // Grandus feeds. Keep this recursion limited to known attribute keys.
+    let visitedNested = false;
+    for (const childKey of nestedKeys) {
+      const child = container[childKey];
+      if (child && typeof child === "object") {
+        visitedNested = true;
+        walk(child, `${source}.${childKey}`, depth + 1);
+      }
+    }
+    for (const [label, rawValue] of Object.entries(container).slice(0, 160)) {
+      if (nestedKeys.includes(label) || rawValue == null || typeof rawValue === "function") continue;
+      if (typeof rawValue === "object" && !Array.isArray(rawValue)) {
+        const hasValueField = ["value", "valueText", "displayValue", "text", "amount", "quantityValue"].some(key => rawValue[key] != null);
+        if (hasValueField) add(label, rawValue, source);
+        else if (!visitedNested) walk(rawValue, `${source}.${label}`, depth + 1);
+      } else if (!Array.isArray(rawValue)) {
+        add(label, rawValue, source);
+      }
+    }
+  };
+
+  for (const key of arrayKeys) {
+    const value = object[key];
+    if (value && typeof value === "object") walk(value, `json:${key}`);
+  }
+  return entries.slice(0, 160);
+}
+
+function mergeProductAttributes(primary = [], fallback = []) {
+  const output = [];
+  const seen = new Set();
+  for (const entry of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])]) {
+    if (!entry || typeof entry !== "object") continue;
+    const name = cleanText(String(entry.name ?? entry.label ?? ""), 100);
+    const value = cleanText(String(entry.value ?? entry.valueText ?? ""), 240);
+    if (!name || !value) continue;
+    const key = `${normalizePhysicalLabel(name)}|${value.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push({ name, value, ...(entry.source ? { source: cleanText(String(entry.source), 80) } : {}) });
+    if (output.length >= 160) break;
+  }
+  return output;
+}
+
+function extractProductAttributesFromStructured(...objects) {
+  const entries = [];
+  for (const object of objects) entries.push(...getStructuredProductAttributeEntries(object));
+  return mergeProductAttributes(entries);
+}
+
+function extractPackageMeasureFromParameterEntries(entries) {
+  // Only infer sellable package contents from an explicit net-content label.
+  // Physical product/package weight and appliance volume are stored separately
+  // and must never become a unit-price denominator.
+  const allowedLabels = /^(?:netto(?:\s+(?:obsah|hmotnost|vaha|weight|mass|content|objem|volume))?|net(?:\s+(?:weight|mass|content|volume))?|cista\s+(?:hmotnost|vaha|obsah)|obsah\s+balenia|package\s+content)$/;
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const label = normalizePhysicalLabel(entry?.name || "").replace(/[^a-z0-9]+/g, " ").trim();
+    if (!allowedLabels.test(label)) continue;
+    const explicit = extractExplicitNetPackageMeasureFromText(`${entry.name}: ${entry.value}`);
+    if (explicit) {
+      explicit.packageMeasureSource = entry.source || "json:detailedParameters";
+      return explicit;
+    }
+  }
+  return null;
 }
 
 function extractPhysicalSpecsFromStructured(...objects) {
@@ -1597,26 +1750,41 @@ function extractPhysicalSpecsFromStructured(...objects) {
         output.productVolumeSource = "json:volume";
       }
     }
-    const properties = Array.isArray(object.additionalProperty) ? object.additionalProperty :
-      Array.isArray(object.additionalProperties) ? object.additionalProperties :
-      Array.isArray(object.specifications) ? object.specifications : [];
+    const properties = getStructuredProductAttributeEntries(object);
     const hasExplicitGrossPackageWeight = properties.some(property => {
-      const label = normalizePhysicalLabel(property?.name || property?.propertyID || property?.label || property?.key || "");
-      return /(?:brutto|gross|shipping|package|packaging|preprav|balen|versand|verpack)/.test(label) && /(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)/.test(label);
+      const label = normalizePhysicalLabel(property?.name || "");
+      const propertySource = String(property?.source || "").toLowerCase();
+      // Preserve the established Schema.org logistics heuristic, but do not
+      // move Grandus detailedParameters dimensions to shipping solely because
+      // another row in the same technical tab mentions package weight.
+      return /json:additionalproperties?/.test(propertySource) &&
+        /(?:brutto|gross|shipping|package|packaging|preprav|balen|versand|verpack)/.test(label) &&
+        /(?:hmotnost|vaha|weight|gewicht|waga|poids|peso)/.test(label);
     });
-    for (const property of properties.slice(0, 100)) {
+    for (const property of properties.slice(0, 160)) {
       if (!property || typeof property !== "object") continue;
-      let label = property.name || property.propertyID || property.label || property.key || "";
+      let label = property.name || "";
       const normalizedLabel = normalizePhysicalLabel(label);
       const genericDimensionLabel = /^(?:dlzka|sirka|vyska|hlbka|hloubka|length|width|height|depth|breite|hoehe|tiefe|largeur|hauteur|longueur)$/.test(normalizedLabel);
-      // GymBeam and several other shops publish Length/Width/Height alongside
-      // a Brutto/Gross weight in the same logistics specification set.
-      // In that explicit context those axes describe the packed item, not the
-      // unpacked product itself.
+      // A generic width/height/depth row in the same spec group as explicit
+      // packed/gross weight describes the shipping carton, not the product.
       if (hasExplicitGrossPackageWeight && genericDimensionLabel) label = `Shipping ${label}`;
-      const value = property.value ?? property.valueText ?? property.valueReference ?? "";
-      const unit = property.unitText || property.unitCode || property.unit || "";
-      if (label && value != null) applyPhysicalSpecPair(output, label, typeof value === "object" ? { ...value, unitText: value.unitText || unit } : `${value}${unit ? ` ${unit}` : ""}`, "json:additionalProperty");
+      applyPhysicalSpecPair(output, label, property.value, property.source || "json:product-attributes");
+      const packageCountMatch = normalizePhysicalLabel(label).match(/^(?:pocet baleni|pocet balikov|number of packages|package count|packages count)\s*$/);
+      if (packageCountMatch) {
+        const count = String(property.value || "").match(/\b(\d{1,3})\b/);
+        if (count && Number(count[1]) > 0) {
+          output.packageCount = Number(count[1]);
+          output.packageCountSource = property.source || "json:product-attributes";
+        }
+      }
+    }
+    const explicitPackageMeasure = extractPackageMeasureFromParameterEntries(properties);
+    if (explicitPackageMeasure && !output.packageQuantity) Object.assign(output, explicitPackageMeasure);
+    const directPackageCount = object.packageCount ?? object.package_count ?? object.numberOfPackages ?? object.number_of_packages;
+    if (output.packageCount == null && directPackageCount != null && Number.isFinite(Number(directPackageCount)) && Number(directPackageCount) > 0) {
+      output.packageCount = Math.floor(Number(directPackageCount));
+      output.packageCountSource = "json:packageCount";
     }
   }
   return output;
@@ -2315,9 +2483,9 @@ export function extractProductIdentifiers(value = {}) {
   };
   const brandValue = value.brand?.name || value.brand || value.manufacturer?.name || value.manufacturer;
   const identifiers = {
-    sku: scalar(value.sku, value.SKU, value.partNo, value.part_no, value.itemNumber, value.item_number, value.articleNumber, value.article_number),
-    gtin: scalar(value.gtin, value.gtin8, value.gtin12, value.gtin13, value.gtin14, value.ean, value.ean13, value.barcode),
-    mpn: scalar(value.mpn, value.MPN, value.manufacturerPartNumber, value.manufacturer_part_number),
+    sku: scalar(value.sku, value.SKU, value.partNo, value.part_no, value.itemNumber, value.item_number, value.articleNumber, value.article_number, value.productCode, value.product_code, value.manufacturerCode, value.manufacturer_code, value.articleCode, value.article_code),
+    gtin: scalar(value.gtin, value.gtin8, value.gtin12, value.gtin13, value.gtin14, value.ean, value.ean8, value.ean12, value.ean13, value.barcode, value.barCode),
+    mpn: scalar(value.mpn, value.MPN, value.manufacturerPartNumber, value.manufacturer_part_number, value.manufacturerSku, value.manufacturer_sku),
     productId: scalar(value.productID, value.productId, value.product_id, value.id, value.itemId, value.item_id),
     brand: scalar(brandValue)
   };
@@ -2592,10 +2760,15 @@ function extractCurrentProductPageAttributes($, pageUrl, productArea = null) {
   }
   if (stockQuantity != null && stockSource == null) stockSource = "dom:explicit-stock-quantity";
 
+  const productAttributes = mergeProductAttributes(pairs
+    .filter(pair => !/^(?:cena|price|dostupnost|availability|stock|stav skladu|dostupnost produktu|doprava|delivery|shipping|skladom)$/i.test(normalizePhysicalLabel(pair.label)))
+    .map(pair => ({ name: pair.label, value: pair.value, source: "dom:product-attribute-row" })));
+
   return {
     ...(sku ? { sku } : {}),
     ...(gtin ? { gtin } : {}),
     ...(mpn ? { mpn } : {}),
+    ...(productAttributes.length ? { productAttributes } : {}),
     ...physicalSpecs,
     ...(availabilityInfo ? {
       availability: availabilityInfo.availability,
@@ -2664,6 +2837,7 @@ function extractProductFromJsonLd(node, pageUrl) {
     unit: offer.unit || null,
     ...extractPackageMeasure(node, offer),
     ...extractPhysicalSpecsFromStructured(node, offer),
+    productAttributes: extractProductAttributesFromStructured(node, offer),
     url: productUrl,
     image,
     ...extractProductIdentifiers(node),
@@ -3404,8 +3578,10 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
     : String(value["@type"] || "");
   const explicitProductType = /(?:^|\s|\/)Product(?:$|\s)/i.test(typeText);
   const hasProductIdentifier = Boolean(
-    value.sku || value.partNo || value.part_no || value.productId || value.product_id ||
-    (value.id && (value.product_variants || value.product_images || value.categories || value.attributes))
+    value.sku || value.partNo || value.part_no || value.productCode || value.product_code ||
+    value.manufacturerCode || value.manufacturer_code || value.articleCode || value.article_code ||
+    value.gtin || value.ean || value.barcode || value.productId || value.product_id ||
+    (value.id && (value.product_variants || value.product_images || value.categories || value.attributes || value.detailedParameters))
   );
   const hasOffer = Boolean(value.offers && getOfferPrice(value.offers));
   const hasCurrency = Boolean(normalizeCurrency(
@@ -3487,6 +3663,7 @@ function findEmbeddedProducts(value, pageUrl, output = []) {
       unit: extractStructuredUnit(value, defaultPrice),
       ...extractPackageMeasure(value, defaultPrice),
       ...extractPhysicalSpecsFromStructured(value, defaultPrice),
+      productAttributes: extractProductAttributesFromStructured(value, defaultPrice),
       url: productUrl,
       image,
       ...extractProductIdentifiers(value),
@@ -3580,6 +3757,7 @@ function extractProductsFromAppData(data, pageUrl) {
     availability: product.available_in_stock === true || product.is_available === true ? "InStock" : null,
     unit: "neuvedené",
     ...extractPhysicalSpecsFromStructured(product, priceObject),
+    productAttributes: extractProductAttributesFromStructured(product, priceObject),
     url: productUrl,
     image,
     ...(product.sku || product.product_sku ? { sku: product.sku || product.product_sku } : {}),
@@ -5216,6 +5394,7 @@ function deduplicateProducts(products) {
       const previousSource = existing.source || "";
       if (sourceRank(product) > sourceRank(existing)) {
         const merged = { ...existing, ...product, ...mergePhysicalSpecFields(product, existing) };
+        merged.productAttributes = mergeProductAttributes(product.productAttributes, existing.productAttributes);
         if (!product.currency && existing.currency) merged.currency = existing.currency;
         if ((!product.unit || product.unit === "neuvedené") && existing.unit) merged.unit = existing.unit;
         if (!product.image && existing.image) merged.image = existing.image;
@@ -5240,6 +5419,7 @@ function deduplicateProducts(products) {
         result[existingIndex] = merged;
       } else {
         Object.assign(existing, mergePhysicalSpecFields(existing, product));
+        existing.productAttributes = mergeProductAttributes(existing.productAttributes, product.productAttributes);
         if ((!existing.currency || existing.currency === "NEZNAMA") && product.currency) existing.currency = product.currency;
         if ((!existing.unit || existing.unit === "neuvedené") && product.unit && product.unit !== "neuvedené") existing.unit = product.unit;
         if (!existing.image && product.image) existing.image = product.image;
@@ -5589,6 +5769,7 @@ export function extractProductsFromHtml(html, pageUrl, existingRoot = null) {
           ...product,
           ...mergePhysicalSpecFields(product, bodyPhysicalSpecs),
           ...mergePhysicalSpecFields(product, pageAttributes),
+          productAttributes: mergeProductAttributes(product.productAttributes, pageAttributes.productAttributes),
           ...(pageAttributes.sku && !product.sku ? { sku: pageAttributes.sku } : {}),
           ...(pageAttributes.gtin && !product.gtin ? { gtin: pageAttributes.gtin } : {}),
           ...(pageAttributes.mpn && !product.mpn ? { mpn: pageAttributes.mpn } : {}),
@@ -7644,7 +7825,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   }));
 
   const diagnostics = {
-    importerVersion: "V3.86.3",
+    importerVersion: "V3.86.4",
     errorDetails: errors.slice(0, 10),
     productDetailCandidatesDiscovered: candidateProductDetailUrls.size + skippedProductDetailUrls.size,
     productDetailCandidatesAdmitted: candidateProductDetailUrls.size,
