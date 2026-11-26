@@ -7,7 +7,8 @@ import ipaddr from "ipaddr.js";
 import { load as loadHtml } from "cheerio";
 
 // ==========================================
-// NOVA AI - WEBSITE IMPORTER V3.86.4
+// NOVA AI - WEBSITE IMPORTER V3.86.5
+// V3.86.5 keeps physical product/package weight and volume separate from sellable package contents.
 // V3.86.4 reads Grandus/Euronics detailedParameters and preserves generic product attributes.
 // Existing category/detail crawl limits, price validation, identifiers and safe merge rules are unchanged.
 // Universal product import: multilingual variant discovery, product dimensions and per-parcel package breakdown
@@ -833,7 +834,10 @@ function extractStructuredUnit(...objects) {
 // labelled package-weight/content fields are accepted; product names are
 // deliberately never parsed for a guessed package size.
 function extractPackageMeasure(...objects) {
-  const keys = ["netWeight", "packageWeight", "weight", "netContent", "contentSize", "fluidVolume", "volume"];
+  // Only fields that explicitly describe sellable contents are accepted.
+  // Physical product weight, gross/package weight and appliance capacity/volume
+  // are handled by extractPhysicalSpecsFromStructured(), never as package quantity.
+  const keys = ["netContent", "contentSize", "packageContent", "packageContents", "netQuantity", "packageQuantity"];
   for (const object of objects) {
     if (!object || typeof object !== "object") continue;
     for (const key of keys) {
@@ -865,7 +869,8 @@ function extractPackageMeasure(...objects) {
       }
     }
   }
-  return { packageQuantity: null, packageUnit: null, packageMeasureSource: null };
+  // Absence is represented by absent fields, not null-valued sale quantities.
+  return {};
 }
 
 function parseExplicitPackageLabel(value) {
@@ -896,10 +901,9 @@ export function extractExplicitNetPackageMeasureFromText(value) {
     .trim();
   if (!text) return null;
 
-  // Accept only labels that explicitly describe the product's net/package
-  // contents. This intentionally excludes generic "hmotnosť" and nutrition
-  // table reference quantities such as 100 g.
-  const match = text.match(/(?:netto\s*(?:(?:váha|hmotnosť|obsah|objem))?|net\s*(?:weight|mass|content|volume)|čist(?:á|a)\s*(?:hmotnosť|váha|obsah)|netto\s*weight|obsah\s*balenia|package\s*content)\s*(?:\((kg|g|ml|l)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)?\b/i);
+  // Accept only explicit net-content/net-volume labels. Net/product weight
+  // is a physical specification and is deliberately not a sales package size.
+  const match = text.match(/(?:netto\s*(?:obsah|objem)|net\s*(?:content|volume)|čist(?:ý|y|á|a)\s*(?:obsah|objem)|obsah\s*balenia|package\s*content|content\s*of\s*(?:the\s*)?package)\s*(?:\((kg|g|ml|l)\))?\s*[:：-]?\s*(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)?\b/i);
   if (!match) return null;
 
   let quantity = Number(match[2].replace(",", "."));
@@ -1660,7 +1664,7 @@ function extractPackageMeasureFromParameterEntries(entries) {
   // Only infer sellable package contents from an explicit net-content label.
   // Physical product/package weight and appliance volume are stored separately
   // and must never become a unit-price denominator.
-  const allowedLabels = /^(?:netto(?:\s+(?:obsah|hmotnost|vaha|weight|mass|content|objem|volume))?|net(?:\s+(?:weight|mass|content|volume))?|cista\s+(?:hmotnost|vaha|obsah)|obsah\s+balenia|package\s+content)$/;
+  const allowedLabels = /^(?:netto\s+(?:obsah|objem)|net\s+(?:content|volume)|cisty\s+(?:obsah|objem)|obsah\s+balenia|package\s+content|content\s+of\s+(?:the\s+)?package|package\s+quantity|net\s+quantity)$/;
   for (const entry of Array.isArray(entries) ? entries : []) {
     const label = normalizePhysicalLabel(entry?.name || "").replace(/[^a-z0-9]+/g, " ").trim();
     if (!allowedLabels.test(label)) continue;
@@ -2239,27 +2243,26 @@ function extractPackageMeasureFromDom($, container) {
     }
   }
 
-  // Explicit net/package weight wins over generic structured weight fields.
-  // This prevents a nutrition-table value (e.g. 100 g) from masking the
-  // actual package label (e.g. "Netto váha: 1.00 kg").
+  // Explicit net contents win over generic structured properties.
+  // Physical/net product weight is not automatically a sellable package size.
   const explicitNetPackageMeasure = extractExplicitNetPackageMeasureFromText(fullTextForPackage);
   if (explicitNetPackageMeasure) {
     return { ...explicitNetPackageMeasure, packageOptions: null };
   }
 
   const selectors = [
-    "[itemprop='netWeight']", "[itemprop='netContent']",
-    "[data-net-weight]", ".net-weight", ".net-content", ".product-net-weight"
+    "[itemprop='netContent']", "[data-net-content]", ".net-content",
+    ".product-net-content", "[data-content-size]", ".content-size"
   ];
   for (const selector of selectors) {
     const node = container.find(selector).first();
     if (!node.length) continue;
-    const raw = node.attr("content") || node.attr("data-net-weight") ||
-      node.attr("data-package-weight") || node.attr("data-weight") || node.text();
-    const measure = extractPackageMeasure({ weight: {
+    const raw = node.attr("content") || node.attr("data-net-content") ||
+      node.attr("data-content-size") || node.text();
+    const measure = extractPackageMeasure({ netContent: {
       value: raw,
-      unitCode: node.attr("data-unit-code") || node.attr("data-weight-unit") || node.attr("data-unit"),
-      unitText: node.attr("data-unit-text") || node.attr("data-weight-unit") || node.attr("data-unit")
+      unitCode: node.attr("data-unit-code") || node.attr("data-content-unit") || node.attr("data-unit"),
+      unitText: node.attr("data-unit-text") || node.attr("data-content-unit") || node.attr("data-unit")
     } });
     if (measure.packageQuantity != null) return { ...measure, packageLabel: `${measure.packageQuantity} ${measure.packageUnit}`, packageMeasureSource: `dom:${selector}` };
   }
@@ -7825,7 +7828,7 @@ export async function crawlWebsite(inputUrl, options = {}) {
   }));
 
   const diagnostics = {
-    importerVersion: "V3.86.4",
+    importerVersion: "V3.86.5",
     errorDetails: errors.slice(0, 10),
     productDetailCandidatesDiscovered: candidateProductDetailUrls.size + skippedProductDetailUrls.size,
     productDetailCandidatesAdmitted: candidateProductDetailUrls.size,
