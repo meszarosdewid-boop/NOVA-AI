@@ -1,0 +1,36 @@
+name: Website importer regression tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website-import-v2.js"
+      - "tests/test-gymbeam-4home-regression.mjs"
+      - ".github/workflows/importer-regression.yml"
+  pull_request:
+    paths:
+      - "website-import-v2.js"
+      - "tests/test-gymbeam-4home-regression.mjs"
+      - ".github/workflows/importer-regression.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  importer-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install importer runtime dependencies
+        run: |
+          npm init -y
+          npm install --no-save --no-package-lock cheerio@1 ipaddr.js
+      - name: Check importer syntax
+        run: node --check website-import-v2.js
+      - name: Test GymBeam and 4home import paths
+        run: node tests/test-gymbeam-4home-regression.mjs
