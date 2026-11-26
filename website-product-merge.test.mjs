@@ -32,6 +32,14 @@ test("separates conflicting values inside variantAttributes", () => {
   assert.equal(groups.length, 2);
 });
 
+test("variant attribute key matching is case-insensitive", () => {
+  const groups = groupImportProductsByIdentity([
+    product({ variantAttributes: { Color: "Black" } }),
+    product({ variantAttributes: { color: "White" } })
+  ]);
+  assert.equal(groups.length, 2);
+});
+
 test("an identifier-free bridge record cannot merge two explicit variants", () => {
   const groups = groupImportProductsByIdentity([
     product({ color: "Black" }),
@@ -79,4 +87,5 @@ test("the server uses a separate exact-identity candidate pool for physical fact
   assert.match(server, /canMergePhysicalAttributes\(preferred, item\)/);
   assert.match(server, /for \(const candidate of physicalCandidates\)/);
   assert.match(server, /const source = candidates\.find\(item => item\?\.\[field\]/);
+  assert.ok(server.includes("...mergeImportPhysicalSpecs(item)"), "preview must forward physical specification fields");
 });
