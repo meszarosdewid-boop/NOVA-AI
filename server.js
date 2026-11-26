@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import crypto from "crypto";
 import { crawlWebsite, normalizeOptionalPositiveNumber } from "./website-import-v2.js";
+import { applyVerifiedProductNameOverrides, groupImportProductsByIdentity, isBrandOnlyProductName, summarizeRejectedImportNameRecords } from "./website-product-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -81,6 +82,7 @@ const leadsPath = path.join(__dirname, "leads.json");
 const usersPath = path.join(__dirname, "users.json");
 const catalogPath = path.join(__dirname, "catalog.json");
 const quotesPath = path.join(__dirname, "quotes.json");
+const productNameOverridesPath = path.join(__dirname, "product-name-overrides.json");
 
 // Krátkodobé, tenantovo oddelené náhľady importu produktov.
 const websiteProductPreviews = new Map();
@@ -1754,6 +1756,14 @@ function isLikelyImportProductName(value) {
   return true;
 }
 
+function isImportPreviewProductName(item) {
+  return Boolean(
+    item &&
+    isLikelyImportProductName(item.name) &&
+    !isBrandOnlyProductName(item.name, item.brand)
+  );
+}
+
 function normalizeImportCurrency(value) {
   const currency = String(value || "").trim().toUpperCase();
   const aliases = {
@@ -1772,14 +1782,54 @@ function isMissingImportLabel(value) {
   return ["", "neuvedene", "nezistene", "unknown", "n/a", "na", "null"].includes(normalized);
 }
 
+function mergeImportDimensionInfo(primary, fallback) {
+  const has = item => Boolean(item && (item.raw || ["width", "height", "depth", "length", "diameter", "thickness"].some(key => Number(item[key]) > 0)));
+  if (!has(primary)) return has(fallback) ? { ...fallback } : null;
+  const merged = { ...(fallback || {}), ...(primary || {}) };
+  for (const key of ["width", "height", "depth", "length", "diameter", "thickness"]) {
+    if (!(Number(merged[key]) > 0)) merged[key] = Number(fallback?.[key]) > 0 ? Number(fallback[key]) : null;
+  }
+  merged.raw = primary.raw || fallback?.raw || null;
+  merged.source = primary.source || fallback?.source || null;
+  merged.unit = "cm";
+  return merged;
+}
+
+function mergeImportPhysicalSpecs(primary = {}, fallback = {}) {
+  const output = {};
+  for (const key of ["productDimensions", "shippingDimensions"]) {
+    const value = mergeImportDimensionInfo(primary?.[key], fallback?.[key]);
+    if (value) output[key] = value;
+  }
+  for (const prefix of ["productWeight", "shippingWeight", "productVolume", "shippingVolume"]) {
+    const sourceKey = `${prefix}Source`;
+    const primaryValue = Number(primary?.[prefix]);
+    const fallbackValue = Number(fallback?.[prefix]);
+    const primarySource = String(primary?.[sourceKey] || "").toLowerCase();
+    const fallbackSource = String(fallback?.[sourceKey] || "").toLowerCase();
+    const primaryIsGenericWeight = prefix === "shippingWeight" && /json:weight-assumed-packed|json:weight$/.test(primarySource);
+    const fallbackIsExplicit = /gross|brutto|shipping|package|dom:table-row|dom:definition-list|dom:labelled-specification|dom:labelled-weight|json:additionalproperty/.test(fallbackSource);
+    const preferFallback = fallbackValue > 0 && fallbackIsExplicit && (primaryValue <= 0 || primaryIsGenericWeight);
+    const value = preferFallback ? fallbackValue : primaryValue > 0 ? primaryValue : fallbackValue > 0 ? fallbackValue : null;
+    if (value != null) {
+      output[prefix] = value;
+      output[`${prefix}Unit`] = (preferFallback ? fallback?.[`${prefix}Unit`] : primary?.[`${prefix}Unit`]) || primary?.[`${prefix}Unit`] || fallback?.[`${prefix}Unit`] || (prefix.endsWith("Volume") ? "l" : "kg");
+      output[sourceKey] = (preferFallback ? fallback?.[sourceKey] : primary?.[sourceKey]) || primary?.[sourceKey] || fallback?.[sourceKey] || null;
+    }
+  }
+  return output;
+}
+
 function mergeImportProductGroup(group) {
   const sourceScore = item => {
     const source = String(item?.source || "").toLowerCase();
-    return (source.includes("primary-product-buybox") ? 30 : 0) +
+    return (item?.detailPageVisited === true ? 60 : 0) +
+      (source.includes("primary-product-buybox") ? 30 : 0) +
       (source.includes("json-ld") ? 12 : 0) +
       (source.includes("microdata") ? 10 : 0) +
       (source.includes("html-card") ? 8 : 0) +
       (source.includes("linked-product-card") ? 5 : 0) +
+      (/\/(?:produkt|product|p)\//i.test(String(item?.url || item?.sourceUrl || "")) ? 8 : 0) +
       (item?.url ? 2 : 0);
   };
   const ranked = [...group].sort((a, b) => sourceScore(b) - sourceScore(a));
@@ -1816,16 +1866,33 @@ function mergeImportProductGroup(group) {
 
   const merged = {
     ...preferred,
+    ...mergeImportPhysicalSpecs(preferred),
     ...mergedIdentifiers,
     identifierConflicts,
     currency: chosenCurrency,
     ambiguousPrice: prices.size > 1,
     ambiguousCurrency: currencies.size > 1,
-    couponPriceDetected: candidates.some(item => item.couponPriceDetected === true)
+    couponPriceDetected: candidates.some(item => item.couponPriceDetected === true),
+    detailPageVisited: group.some(item => item.detailPageVisited === true)
   };
+
+  // Enrich listing records from the same safely identified product detail.
+  // Preserve explicit zero stock and false-like values; do not replace them
+  // with estimates or values from a different price/variant group.
+  for (const field of [
+    "availability", "availabilityText", "availabilitySource",
+    "stockQuantity", "stockQuantityUnit", "stockSource",
+    "stockLocations", "stockLocationsSource", "image"
+  ]) {
+    if (merged[field] == null || merged[field] === "") {
+      const source = candidates.find(item => item?.[field] != null && item[field] !== "");
+      if (source) merged[field] = source[field];
+    }
+  }
 
   // Keep the selected selling price from the preferred record. Enrich only
   // matching offers so metadata from a different price/variant cannot leak in.
+  for (const candidate of candidates) Object.assign(merged, mergeImportPhysicalSpecs(merged, candidate));
   const measureSource = candidates.find(item => positive(item.packageQuantity) && unitValid(item.packageUnit));
   if (!positive(merged.packageQuantity) || !unitValid(merged.packageUnit)) {
     if (measureSource) {
@@ -1858,6 +1925,16 @@ function mergeImportProductGroup(group) {
   if (!Array.isArray(merged.variantOptions) || !merged.variantOptions.length) {
     const optionSource = candidates.find(item => Array.isArray(item.variantOptions) && item.variantOptions.length);
     if (optionSource) merged.variantOptions = optionSource.variantOptions;
+  }
+  if (!Array.isArray(merged.shippingPackages) || !merged.shippingPackages.length) {
+    const packageSource = candidates.find(item => Array.isArray(item.shippingPackages) && item.shippingPackages.length);
+    if (packageSource) {
+      merged.shippingPackages = packageSource.shippingPackages;
+      merged.packageCount = packageSource.packageCount ?? null;
+      merged.packageCountSource = packageSource.packageCountSource || null;
+      merged.shippingPackageSource = packageSource.shippingPackageSource || null;
+      merged.shippingWeightQualifier = packageSource.shippingWeightQualifier || null;
+    }
   }
   for (const field of ["packagePrice", "priceBasis", "packageMeasureSource", "unitPriceSource", "unitPriceDerived", "packageMeasureDerived", "saleUnitSource", "priceTypeSource"]) {
     if (merged[field] == null || merged[field] === "") {
@@ -1990,13 +2067,18 @@ app.post(
             }))
           : []
       );
-      const foundRaw = crawlerProducts.length ? crawlerProducts : pageProducts;
+      const originalFoundRaw = crawlerProducts.length ? crawlerProducts : pageProducts;
+      const productNameOverrides = readJsonFile(productNameOverridesPath, { version: 1, products: {} });
+      const nameOverrideResult = applyVerifiedProductNameOverrides(originalFoundRaw, productNameOverrides);
+      const foundRaw = nameOverrideResult.records;
+      const pageNameOverrideResult = applyVerifiedProductNameOverrides(pageProducts, productNameOverrides);
+      const pageProductsWithOverrides = pageNameOverrideResult.records;
 
       const validProducts = foundRaw
         .filter(item =>
           item &&
           typeof item.name === "string" &&
-          isLikelyImportProductName(item.name) &&
+          isImportPreviewProductName(item) &&
           Number.isFinite(Number(item.price)) &&
           Number(item.price) > 0 &&
           Number(item.price) <= 100000000
@@ -2009,19 +2091,21 @@ app.post(
 
       // Dalsia diagnostika: porovnanie surovych produktov z jednotlivych stranok
       // este pred deduplikaciou crawlera. Nezasahuje do importovanych dat.
-      const rawPageValidProducts = pageProducts.filter(item =>
+      const rawPageValidProducts = pageProductsWithOverrides.filter(item =>
         item &&
         typeof item.name === "string" &&
-        isLikelyImportProductName(item.name) &&
+        isImportPreviewProductName(item) &&
         Number.isFinite(Number(item.price)) &&
         Number(item.price) > 0 &&
         Number(item.price) <= 100000000
       );
       const rawIdentityPages = new Map();
       const rawPageStats = pages.map((page, index) => {
-        const validOnPage = (Array.isArray(page.products) ? page.products : []).filter(item =>
+        const pageStart = pages.slice(0, index).reduce((sum, previous) => sum + (Array.isArray(previous.products) ? previous.products.length : 0), 0);
+        const pageEnd = pageStart + (Array.isArray(page.products) ? page.products.length : 0);
+        const validOnPage = pageProductsWithOverrides.slice(pageStart, pageEnd).filter(item =>
           item && typeof item.name === "string" &&
-          isLikelyImportProductName(item.name) &&
+          isImportPreviewProductName(item) &&
           Number.isFinite(Number(item.price)) && Number(item.price) > 0 &&
           Number(item.price) <= 100000000
         );
@@ -2050,21 +2134,14 @@ app.post(
         .filter(item => item.pages.length > 1)
         .slice(0, 30);
 
-      // Deduplikujeme podľa URL produktu + názvu. Rovnaký produkt z
-      // kategórie a detailu sa spojí, ale dva varianty s rovnakým názvom
-      // a odlišnou produktovou URL zostanú samostatné.
-      const grouped = new Map();
-
-      for (const item of validProducts) {
-        const nameKey = normalizeProductName(item.name);
-        if (!nameKey) continue;
-        const productUrl = normalizeImportProductUrl(item.sourceUrl || item.url);
-        const key = productUrl ? `${productUrl}|${nameKey}` : `name:${nameKey}`;
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key).push(item);
-      }
-
-            const found = [...grouped.values()].map(mergeImportProductGroup);
+      // Najprv spájame záznamy podľa stabilnej identity produktu. E-shopy
+      // často vrátia kategóriovú kartu pod URL kategórie a detail pod URL
+      // produktu; párovanie iba podľa URL preto nechávalo tie isté produkty
+      // dvakrát a zahadzovalo SKU/EAN získané z detailu.
+      // GTIN/SKU/productId majú prednosť pred URL+názov. Konfliktné GTIN/SKU
+      // ostávajú oddelené, aby sa nezliali rozdielne varianty.
+      const grouped = groupImportProductsByIdentity(validProducts);
+      const found = grouped.map(mergeImportProductGroup);
 
       // Diagnostika importu: rozlisime produkty, ktore crawler nasiel,
       // produkty vyradene pre nazov/cenu a vysledok po deduplikacii.
@@ -2077,6 +2154,7 @@ app.post(
         error: page.error || null
       }));
       const diagnosticSummary = {
+        serverPreviewFixVersion: "V3.87.3",
         tenantId: context.id,
         inputUrl: url,
         pagesVisited: pagesScanned,
@@ -2091,9 +2169,26 @@ app.post(
           !Number.isFinite(Number(item?.price)) || Number(item?.price) <= 0 || Number(item?.price) > 100000000
         ).length,
         rejectedInvalidName: foundRaw.filter(item =>
-          !item || typeof item.name !== "string" || !isLikelyImportProductName(item.name)
+          !isImportPreviewProductName(item)
         ).length,
         afterUrlAndNameDeduplication: found.length,
+        afterStableIdentityMerge: found.length,
+        recordsMergedByStableIdentity: Math.max(0, validProducts.length - found.length),
+        productIdRecords: validProducts.filter(item => String(item.productId || "").trim()).length,
+        skuRecords: validProducts.filter(item => String(item.sku || "").trim()).length,
+        gtinRecords: validProducts.filter(item => String(item.gtin || "").trim()).length,
+        brandOnlyNamesFoundBeforeVerifiedOverride: originalFoundRaw.filter(item => isBrandOnlyProductName(item?.name, item?.brand)).length,
+        brandOnlyNamesRejected: foundRaw.filter(item => isBrandOnlyProductName(item?.name, item?.brand)).length,
+        verifiedProductNameOverridesApplied: nameOverrideResult.appliedRecordCount,
+        verifiedProductNameOverrideExactGtinMatches: nameOverrideResult.exactGtinMatches,
+        verifiedProductNameOverridePropagatedRecords: nameOverrideResult.propagatedRecordCount,
+        // Keep rejected records visible in diagnostics so we can tell whether
+        // a brand-only title hides a genuine product with a model/MPN or only
+        // an unhelpful brand label. These records are NOT added to the preview.
+        rejectedInvalidNameRecords: summarizeRejectedImportNameRecords(
+          foundRaw,
+          item => isImportPreviewProductName(item)
+        ),
         rawPageValidProducts: rawPageValidProducts.length,
         rawPageUniqueIdentities: rawIdentityPages.size,
         rawPageDuplicates: rawPageValidProducts.length - rawIdentityPages.size,
@@ -2166,7 +2261,24 @@ app.post(
           packageQuantity: normalizeOptionalPositiveNumber(item.packageQuantity),
           packageUnit: item.packageUnit || null,
           packageLabel: item.packageLabel || null,
+          productDimensions: item.productDimensions && typeof item.productDimensions === "object" ? item.productDimensions : null,
+          shippingDimensions: item.shippingDimensions && typeof item.shippingDimensions === "object" ? item.shippingDimensions : null,
+          productWeight: normalizeOptionalPositiveNumber(item.productWeight),
+          productWeightUnit: item.productWeight != null ? (item.productWeightUnit || "kg") : null,
+          productWeightSource: item.productWeightSource || null,
+          shippingWeight: normalizeOptionalPositiveNumber(item.shippingWeight),
+          shippingWeightUnit: item.shippingWeight != null ? (item.shippingWeightUnit || "kg") : null,
+          shippingWeightSource: item.shippingWeightSource || null,
+          shippingWeightQualifier: item.shippingWeightQualifier || null,
+          packageCount: normalizeOptionalPositiveNumber(item.packageCount),
+          packageCountSource: item.packageCountSource || null,
+          shippingPackages: Array.isArray(item.shippingPackages) ? item.shippingPackages.slice(0, 80) : [],
+          shippingPackageSource: item.shippingPackageSource || null,
+          productVolume: normalizeOptionalPositiveNumber(item.productVolume),
+          productVolumeUnit: item.productVolume != null ? (item.productVolumeUnit || "l") : null,
+          productVolumeSource: item.productVolumeSource || null,
           packageOptions: Array.isArray(item.packageOptions) ? item.packageOptions.slice(0, 40) : [],
+          ...mergeImportPhysicalSpecs(item),
           variantOptions: Array.isArray(item.variantOptions) ? item.variantOptions.slice(0, 40) : [],
           detailPageVisited: item.detailPageVisited === true,
           listingPageUrl: item.listingPageUrl || null,
@@ -2277,6 +2389,11 @@ app.post(
           foundRaw: foundRaw.length,
           validProductsWithPriceAndName: validProducts.length,
           afterUrlAndNameDeduplication: found.length,
+          afterStableIdentityMerge: found.length,
+          recordsMergedByStableIdentity: Math.max(0, validProducts.length - found.length),
+          productIdRecords: validProducts.filter(item => String(item.productId || "").trim()).length,
+          skuRecords: validProducts.filter(item => String(item.sku || "").trim()).length,
+          gtinRecords: validProducts.filter(item => String(item.gtin || "").trim()).length,
           totalBytes: crawlerDiagnostics.totalBytes ?? null,
           pagesFailed: errorsCount,
           categoryPagesFailed: crawlerDiagnostics.categoryPagesFailed ?? null,
@@ -2411,13 +2528,27 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           JSON.stringify(old.variantAttributes || {}) !== JSON.stringify(item.variantAttributes || {}) ||
           JSON.stringify(old.variantOptions || []) !== JSON.stringify(item.variantOptions || [])
         );
+        const needsPhysicalMetadata =
+          JSON.stringify(old.productDimensions || null) !== JSON.stringify(item.productDimensions || null) ||
+          JSON.stringify(old.shippingDimensions || null) !== JSON.stringify(item.shippingDimensions || null) ||
+          Number(old.productWeight || 0) !== Number(item.productWeight || 0) ||
+          String(old.productWeightUnit || "") !== String(item.productWeightUnit || "") ||
+          Number(old.shippingWeight || 0) !== Number(item.shippingWeight || 0) ||
+          String(old.shippingWeightUnit || "") !== String(item.shippingWeightUnit || "") ||
+          Number(old.productVolume || 0) !== Number(item.productVolume || 0) ||
+          String(old.productVolumeUnit || "") !== String(item.productVolumeUnit || "") ||
+          Number(old.shippingVolume || 0) !== Number(item.shippingVolume || 0) ||
+          String(old.shippingVolumeUnit || "") !== String(item.shippingVolumeUnit || "") ||
+          Number(old.packageCount || 0) !== Number(item.packageCount || 0) ||
+          String(old.shippingWeightQualifier || "") !== String(item.shippingWeightQualifier || "") ||
+          JSON.stringify(old.shippingPackages || []) !== JSON.stringify(item.shippingPackages || []);
         const needsIdentifierMetadata =
           String(old.sku || "") !== String(item.sku || "") ||
           String(old.gtin || "") !== String(item.gtin || "") ||
           String(old.mpn || "") !== String(item.mpn || "") ||
           String(old.productId || "") !== String(item.productId || "") ||
           String(old.brand || "") !== String(item.brand || "");
-        if (samePrice && !needsVariantMetadata && !needsPriceMetadata && !needsIdentifierMetadata) { unchanged++; continue; }
+        if (samePrice && !needsVariantMetadata && !needsPriceMetadata && !needsIdentifierMetadata && !needsPhysicalMetadata) { unchanged++; continue; }
         products[existingIndex] = {
           ...old, price: roundMoney(item.price),
           packagePrice: roundMoney(item.packagePrice ?? item.price),
@@ -2427,6 +2558,12 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           packageUnit: item.packageUnit || old.packageUnit || null,
           packageLabel: item.packageLabel || old.packageLabel || null,
           packageOptions: Array.isArray(item.packageOptions) && item.packageOptions.length ? item.packageOptions : (old.packageOptions || []),
+          ...mergeImportPhysicalSpecs(item, old),
+          packageCount: item.packageCount ?? old.packageCount ?? null,
+          packageCountSource: item.packageCountSource || old.packageCountSource || null,
+          shippingPackages: Array.isArray(item.shippingPackages) && item.shippingPackages.length ? item.shippingPackages.slice(0, 80) : (old.shippingPackages || []),
+          shippingPackageSource: item.shippingPackageSource || old.shippingPackageSource || null,
+          shippingWeightQualifier: item.shippingWeightQualifier || old.shippingWeightQualifier || null,
           variantOptions: Array.isArray(item.variantOptions) && item.variantOptions.length ? item.variantOptions : (old.variantOptions || []),
           packageMeasureSource: item.packageMeasureSource || old.packageMeasureSource || null,
           packageMeasureDerived: item.packageMeasureDerived === true || old.packageMeasureDerived === true,
@@ -2456,6 +2593,12 @@ app.post('/api/admin/website-products/approve', requireAuth, (req, res) => {
           packageUnit: item.packageUnit || null,
           packageLabel: item.packageLabel || null,
           packageOptions: Array.isArray(item.packageOptions) ? item.packageOptions.slice(0, 40) : [],
+          ...mergeImportPhysicalSpecs(item),
+          packageCount: item.packageCount ?? null,
+          packageCountSource: item.packageCountSource || null,
+          shippingPackages: Array.isArray(item.shippingPackages) ? item.shippingPackages.slice(0, 80) : [],
+          shippingPackageSource: item.shippingPackageSource || null,
+          shippingWeightQualifier: item.shippingWeightQualifier || null,
           variantOptions: Array.isArray(item.variantOptions) ? item.variantOptions.slice(0, 40) : [],
           detailPageVisited: item.detailPageVisited === true,
           listingPageUrl: item.listingPageUrl || null,
