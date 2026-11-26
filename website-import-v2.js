@@ -829,10 +829,9 @@ function extractStructuredUnit(...objects) {
 }
 
 
-// Package size is stored separately from the sales unit and from the
-// reference price (e.g. EUR/kg). Only explicit structured fields or clearly
-// labelled package-weight/content fields are accepted; product names are
-// deliberately never parsed for a guessed package size.
+// Package size is stored separately from the sales unit and reference price.
+// Only explicit sellable-content fields/labels are accepted; physical product
+// and shipping weights or capacities are never used as package quantity.
 function extractPackageMeasure(...objects) {
   // Only fields that explicitly describe sellable contents are accepted.
   // Physical product weight, gross/package weight and appliance capacity/volume
@@ -2317,13 +2316,14 @@ function extractPackageMeasureFromDom($, container) {
   }
 
   const labelledText = container.text().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
-  const labelMatch = labelledText.match(/(?:netto\s*(?:váha|hmotnosť)|čistá\s+hmotnosť|hmotnosť\s+produktu|obsah\s+balenia|net\s+weight|net\s+content|veľkosť\s+balenia|kapsuly|počet\s+kapsúl|capsules?)\s*:?\s*([^|;,]{1,60})/i);
+  const labelMatch = labelledText.match(/(?:obsah\s+balenia|net\s+content|veľkosť\s+balenia|kapsuly|počet\s+kapsúl|capsules?)\s*:?\s*([^|;,]{1,60})/i);
   if (labelMatch) {
     const measure = parseExplicitPackageLabel(labelMatch[1]);
     if (measure) return { ...measure, packageMeasureSource: "dom:labelled-package-measure", packageOptions: publicOptions };
   }
-  return { packageQuantity: null, packageUnit: null, packageLabel: null,
-    packageMeasureSource: null, packageOptions: publicOptions.length ? publicOptions : null };
+  // Keep unknown package quantity genuinely absent. This prevents callers
+  // and tests from treating a null placeholder as detected sellable content.
+  return publicOptions.length ? { packageOptions: publicOptions } : {};
 }
 
 function extractUnitNearPrice($, container, expectedPrice = null) {
