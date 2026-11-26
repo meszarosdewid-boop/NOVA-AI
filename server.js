@@ -1994,6 +1994,102 @@ function mergeImportProductGroup(group) {
   return merged;
 }
 
+function buildCategoryListingCoverageAudit(products, visitedDetailUrls, failedDetailUrls) {
+  const records = Array.isArray(products) ? products : [];
+  const listingRecords = records.filter(item =>
+    item && item.detailPageVisited !== true && String(item.listingPageUrl || "").trim()
+  );
+  const detailRecords = records.filter(item => item && item.detailPageVisited === true);
+  const normalizeAuditId = value => String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
+  const productIdOf = item => normalizeAuditId(
+    item?.productId || item?.productID || item?.product_id || item?.itemId || item?.item_id
+  );
+  const gtinOf = item => normalizeAuditId(item?.gtin || item?.ean || item?.ean13 || item?.barcode);
+  const skuOf = item => normalizeAuditId(item?.sku || item?.SKU || item?.articleNumber || item?.article_number);
+  const productUrlOf = item => normalizeImportProductUrl(item?.url || "");
+  const detailIds = new Set(detailRecords.map(productIdOf).filter(Boolean));
+  const detailGtins = new Set(detailRecords.map(gtinOf).filter(Boolean));
+  const detailSkus = new Set(detailRecords.map(skuOf).filter(Boolean));
+  const visitedUrls = new Set(
+    (Array.isArray(visitedDetailUrls) ? visitedDetailUrls : [])
+      .map(normalizeImportProductUrl)
+      .filter(Boolean)
+  );
+  const failedUrls = new Set(
+    (Array.isArray(failedDetailUrls) ? failedDetailUrls : [])
+      .map(normalizeImportProductUrl)
+      .filter(Boolean)
+  );
+  // A URL being attempted is not proof that its detail page loaded. Count it
+  // as successful only when it appears in the visited set and not in failures.
+  const successfulUrls = new Set([...visitedUrls].filter(value => !failedUrls.has(value)));
+  const distinct = values => [...new Set(values.filter(Boolean))];
+  const listingProductIds = distinct(listingRecords.map(productIdOf));
+  const listingGtins = distinct(listingRecords.map(gtinOf));
+  const listingSkus = distinct(listingRecords.map(skuOf));
+  const listingProductUrls = distinct(listingRecords.map(productUrlOf));
+  const listingPageUrls = distinct(listingRecords.map(item => normalizeImportProductUrl(item.listingPageUrl)));
+  const listingProductIdsWithoutDetailMatch = listingProductIds.filter(id => !detailIds.has(id));
+  const listingGtinsWithoutDetailMatch = listingGtins.filter(gtin => !detailGtins.has(gtin));
+  const listingSkusWithoutDetailMatch = listingSkus.filter(sku => !detailSkus.has(sku));
+  const listingProductUrlsNotVisited = listingProductUrls.filter(productUrl => !visitedUrls.has(productUrl));
+  const listingProductUrlsWithoutSuccessfulDetail = listingProductUrls.filter(productUrl => !successfulUrls.has(productUrl));
+
+  const unmatchedByIdentity = new Map();
+  for (const item of listingRecords) {
+    const productId = productIdOf(item);
+    const gtin = gtinOf(item);
+    const sku = skuOf(item);
+    const productUrl = productUrlOf(item);
+    const hasDetailIdentityMatch = Boolean(
+      (productId && detailIds.has(productId)) ||
+      (gtin && detailGtins.has(gtin)) ||
+      (sku && detailSkus.has(sku)) ||
+      (productUrl && successfulUrls.has(productUrl))
+    );
+    if (hasDetailIdentityMatch) continue;
+    const key = [productId, gtin, sku, productUrl, normalizeProductName(item.name || "")].join("|");
+    if (unmatchedByIdentity.has(key)) continue;
+    unmatchedByIdentity.set(key, {
+      name: String(item.name || "").slice(0, 220),
+      brand: String(item.brand || "").slice(0, 100) || null,
+      productId: productId || null,
+      sku: sku || null,
+      gtin: gtin || null,
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : null,
+      productUrl: productUrl || null,
+      listingPageUrl: normalizeImportProductUrl(item.listingPageUrl) || null,
+      detailPageAttempted: Boolean(productUrl && visitedUrls.has(productUrl)),
+      detailPageSuccessful: Boolean(productUrl && successfulUrls.has(productUrl)),
+      detailPageFailed: Boolean(productUrl && failedUrls.has(productUrl)),
+      source: String(item.source || "").slice(0, 100) || null
+    });
+  }
+
+  return {
+    listingPages: listingPageUrls.length,
+    listingRecords: listingRecords.length,
+    listingDistinctProductIds: listingProductIds.length,
+    listingDistinctGtins: listingGtins.length,
+    listingDistinctSkus: listingSkus.length,
+    listingDistinctProductUrls: listingProductUrls.length,
+    detailPageRecords: detailRecords.length,
+    detailDistinctProductIds: detailIds.size,
+    detailDistinctGtins: detailGtins.size,
+    detailDistinctSkus: detailSkus.size,
+    detailUrlsVisited: visitedUrls.size,
+    detailUrlsSuccessful: successfulUrls.size,
+    detailUrlsFailed: failedUrls.size,
+    listingProductIdsWithoutDetailMatch: listingProductIdsWithoutDetailMatch.length,
+    listingGtinsWithoutDetailMatch: listingGtinsWithoutDetailMatch.length,
+    listingSkusWithoutDetailMatch: listingSkusWithoutDetailMatch.length,
+    listingProductUrlsNotVisited: listingProductUrlsNotVisited.length,
+    listingProductUrlsWithoutSuccessfulDetail: listingProductUrlsWithoutSuccessfulDetail.length,
+    listingRecordsWithoutAnyDetailIdentityMatch: unmatchedByIdentity.size,
+    listingRecordsWithoutAnyDetailIdentityMatchSample: [...unmatchedByIdentity.values()].slice(0, 100)
+  };
+}
+
 function isWebsiteImportComplete(result, diagnostics, errorsCount) {
   const effectiveStopReason = result?.stopReason || diagnostics?.stopReason || null;
   const categoryPagesFailed = Number(diagnostics?.categoryPagesFailed ?? errorsCount);
@@ -2153,8 +2249,22 @@ app.post(
         products: Array.isArray(page.products) ? page.products.length : 0,
         error: page.error || null
       }));
+      // Audit the crawler's collected product records, not the raw page.products
+      // snapshots. The importer adds detailPageVisited/listingPageUrl metadata
+      // to result.products while collecting each record; those flags are not
+      // written back into pages[].products. Using pageProductsWithOverrides
+      // therefore produced an all-zero listing audit even when records existed.
+      const failedProductDetailUrls = pages
+        .filter(page => page && page.error && page.pageType === "product-detail")
+        .map(page => page.url)
+        .filter(Boolean);
+      const categoryListingAudit = buildCategoryListingCoverageAudit(
+        foundRaw,
+        crawlerDiagnostics.productDetailUrlsVisitedList,
+        failedProductDetailUrls
+      );
       const diagnosticSummary = {
-        serverPreviewFixVersion: "V3.87.3",
+        serverPreviewFixVersion: "V3.87.5",
         tenantId: context.id,
         inputUrl: url,
         pagesVisited: pagesScanned,
@@ -2194,10 +2304,16 @@ app.post(
         rawPageDuplicates: rawPageValidProducts.length - rawIdentityPages.size,
         rawPages: rawPageStats,
         duplicateProductsAcrossPages: rawCrossPageDuplicates,
+        // Diagnostic-only audit: compares category listing records with detail
+        // URLs actually visited. It does not change crawling, grouping or preview items.
+        categoryListingAudit,
         importerVersion: crawlerDiagnostics.importerVersion ?? null,
         categoryPagesFailed: crawlerDiagnostics.categoryPagesFailed ?? null,
         productDetailPagesFailed: crawlerDiagnostics.productDetailPagesFailed ?? null,
         productDetailCandidatesDiscovered: crawlerDiagnostics.productDetailCandidatesDiscovered ?? null,
+        productDetailCandidatesAdmitted: crawlerDiagnostics.productDetailCandidatesAdmitted ?? null,
+        productDetailCandidatesSkippedByLimit: crawlerDiagnostics.productDetailCandidatesSkippedByLimit ?? null,
+        productDetailCandidatesSkippedByLimitSample: crawlerDiagnostics.productDetailCandidatesSkippedByLimitSample ?? [],
         productDetailUrlsQueued: crawlerDiagnostics.productDetailUrlsQueued ?? null,
         productDetailPagesVisited: crawlerDiagnostics.productDetailPagesVisited ?? null,
         productDetailPagesSuccessful: crawlerDiagnostics.productDetailPagesSuccessful ?? null,
@@ -2402,6 +2518,9 @@ app.post(
           categoryPagesFailed: crawlerDiagnostics.categoryPagesFailed ?? null,
           productDetailPagesFailed: crawlerDiagnostics.productDetailPagesFailed ?? null,
           productDetailCandidatesDiscovered: crawlerDiagnostics.productDetailCandidatesDiscovered ?? null,
+          productDetailCandidatesAdmitted: crawlerDiagnostics.productDetailCandidatesAdmitted ?? null,
+          productDetailCandidatesSkippedByLimit: crawlerDiagnostics.productDetailCandidatesSkippedByLimit ?? null,
+          productDetailCandidatesSkippedByLimitSample: crawlerDiagnostics.productDetailCandidatesSkippedByLimitSample ?? [],
           productDetailRequestConcurrency: crawlerDiagnostics.productDetailRequestConcurrency ?? null,
           productDetailRequestDelayMs: crawlerDiagnostics.productDetailRequestDelayMs ?? null,
           paginationUrlsDiscovered: crawlerDiagnostics.paginationUrlsDiscovered ?? null,
