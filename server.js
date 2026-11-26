@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import crypto from "crypto";
 import { crawlWebsite, normalizeOptionalPositiveNumber } from "./website-import-v2.js";
-import { applyVerifiedProductNameOverrides, groupImportProductsByIdentity, isBrandOnlyProductName, summarizeRejectedImportNameRecords } from "./website-product-merge.js";
+import { applyVerifiedProductNameOverrides, canMergePhysicalAttributes, groupImportProductsByIdentity, isBrandOnlyProductName, summarizeRejectedImportNameRecords } from "./website-product-merge.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1848,6 +1848,14 @@ function mergeImportProductGroup(group) {
     return sameMoney(candidatePackagePrice, preferredPrice) || sameMoney(Number(item.price), Number(preferred.price));
   });
   const candidates = sameOfferCandidates.length ? sameOfferCandidates : [preferred];
+
+  // Price and stock data remain restricted to comparable offers. Physical
+  // specifications can also come from another crawl record when an exact EAN
+  // or SKU proves it is the same sellable product and the variant is aligned.
+  const physicalCandidates = ranked.filter(item =>
+    candidates.includes(item) || canMergePhysicalAttributes(preferred, item)
+  );
+
   const firstValid = (field, predicate) => {
     for (const item of candidates) if (predicate(item?.[field])) return item[field];
     return null;
@@ -1890,9 +1898,12 @@ function mergeImportProductGroup(group) {
     }
   }
 
-  // Keep the selected selling price from the preferred record. Enrich only
-  // matching offers so metadata from a different price/variant cannot leak in.
-  for (const candidate of candidates) Object.assign(merged, mergeImportPhysicalSpecs(merged, candidate));
+  // Keep selling-price and stock enrichment offer-scoped. Physical facts such
+  // as dimensions and weight are product-scoped: an exact GTIN/SKU match is
+  // sufficient even when one page omits the price or shows a different offer.
+  for (const candidate of physicalCandidates) {
+    Object.assign(merged, mergeImportPhysicalSpecs(merged, candidate));
+  }
   const measureSource = candidates.find(item => positive(item.packageQuantity) && unitValid(item.packageUnit));
   if (!positive(merged.packageQuantity) || !unitValid(merged.packageUnit)) {
     if (measureSource) {
@@ -1927,7 +1938,7 @@ function mergeImportProductGroup(group) {
     if (optionSource) merged.variantOptions = optionSource.variantOptions;
   }
   if (!Array.isArray(merged.shippingPackages) || !merged.shippingPackages.length) {
-    const packageSource = candidates.find(item => Array.isArray(item.shippingPackages) && item.shippingPackages.length);
+    const packageSource = physicalCandidates.find(item => Array.isArray(item.shippingPackages) && item.shippingPackages.length);
     if (packageSource) {
       merged.shippingPackages = packageSource.shippingPackages;
       merged.packageCount = packageSource.packageCount ?? null;
@@ -1935,6 +1946,23 @@ function mergeImportProductGroup(group) {
       merged.shippingPackageSource = packageSource.shippingPackageSource || null;
       merged.shippingWeightQualifier = packageSource.shippingWeightQualifier || null;
     }
+  }
+  if (!positive(merged.packageCount)) {
+    const packageCountSource = physicalCandidates.find(item => positive(item.packageCount));
+    if (packageCountSource) {
+      merged.packageCount = Number(packageCountSource.packageCount);
+      merged.packageCountSource = packageCountSource.packageCountSource || merged.packageCountSource || null;
+    }
+  }
+  if (!merged.shippingPackageSource) {
+    const packageMetadataSource = physicalCandidates.find(item => item.shippingPackageSource);
+    if (packageMetadataSource) merged.shippingPackageSource = packageMetadataSource.shippingPackageSource;
+  }
+  if (!merged.shippingWeightQualifier) {
+    const qualifierSource = physicalCandidates.find(item =>
+      positive(item.shippingWeight) && item.shippingWeightQualifier
+    );
+    if (qualifierSource) merged.shippingWeightQualifier = qualifierSource.shippingWeightQualifier;
   }
   for (const field of ["packagePrice", "priceBasis", "packageMeasureSource", "unitPriceSource", "unitPriceDerived", "packageMeasureDerived", "saleUnitSource", "priceTypeSource"]) {
     if (merged[field] == null || merged[field] === "") {
